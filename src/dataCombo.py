@@ -1,5 +1,4 @@
 import csv
-import os
 
 #input files
 scientific_file = input("Path to Scientific_name, color, planttype, maintence: ")
