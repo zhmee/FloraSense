@@ -1,0 +1,949 @@
+scientific_name,color,planttype,maintenance
+achillea,yellow,Perennials,low
+achillea,red,Perennials,low
+achillea,purple,Perennials,low
+achillea,pink,Perennials,low
+achillea,white,Perennials,low
+achillea,cream,Perennials,low
+achillea,orange,Perennials,low
+aconitum,yellow,Perennials,medium
+aconitum,purple,Perennials,medium
+aconitum,blue,Perennials,medium
+aconitum,pink,Perennials,medium
+aconitum,white,Perennials,medium
+agapanthus,purple,"Bulbs, Perennials",low
+agapanthus,blue,"Bulbs, Perennials",low
+agapanthus,white,"Bulbs, Perennials",low
+ageratum,red,Annuals,low
+ageratum,purple,Annuals,low
+ageratum,blue,Annuals,low
+ageratum,pink,Annuals,low
+ageratum,white,Annuals,low
+ajuga,purple,"Annuals, Perennials",low
+ajuga,blue,"Annuals, Perennials",low
+ajuga,white,"Annuals, Perennials",low
+alcea,yellow,"Annuals, Perennials",hard
+alcea,red,"Annuals, Perennials",hard
+alcea,purple,"Annuals, Perennials",hard
+alcea,black,"Annuals, Perennials",hard
+alcea,pink,"Annuals, Perennials",hard
+alcea,white,"Annuals, Perennials",hard
+allium,yellow,"Bulbs, Perennials",low
+allium,purple,"Bulbs, Perennials",low
+allium,pink,"Bulbs, Perennials",low
+allium,blue,"Bulbs, Perennials",low
+allium,white,"Bulbs, Perennials",low
+alstroemeria,yellow,"Bulbs, Perennials",low
+alstroemeria,rose,"Bulbs, Perennials",low
+alstroemeria,red,"Bulbs, Perennials",low
+alstroemeria,purple,"Bulbs, Perennials",low
+alstroemeria,pink,"Bulbs, Perennials",low
+alstroemeria,white,"Bulbs, Perennials",low
+alstroemeria,orange,"Bulbs, Perennials",low
+amaryllis,pink,"Bulbs, Perennials",low
+amaryllis,white,"Bulbs, Perennials",low
+amsonia,blue,Perennials,low
+amsonia,white,Perennials,low
+amsonia,pink,Perennials,low
+amsonia,purple,Perennials,low
+anthurium,yellow,Perennials,low
+anthurium,red,Perennials,low
+anthurium,purple,Perennials,low
+anthurium,pink,Perennials,low
+anthurium,white,Perennials,low
+anthurium,green,Perennials,low
+antirrhinum,yellow,"Annuals, Perennials",low
+antirrhinum,red,"Annuals, Perennials",low
+antirrhinum,purple,"Annuals, Perennials",low
+antirrhinum,pink,"Annuals, Perennials",low
+antirrhinum,white,"Annuals, Perennials",low
+antirrhinum,green,"Annuals, Perennials",low
+antirrhinum,orange,"Annuals, Perennials",low
+aquilegia,yellow,Perennials,low
+aquilegia,red,Perennials,low
+aquilegia,purple,Perennials,low
+aquilegia,blue,Perennials,low
+aquilegia,pink,Perennials,low
+aquilegia,white,Perennials,low
+asclepias,yellow,Perennials,low
+asclepias,red,Perennials,low
+asclepias,purple,Perennials,low
+asclepias,pink,Perennials,low
+asclepias,white,Perennials,low
+asclepias,orange,Perennials,low
+aster,yellow,Perennials,medium
+aster,red,Perennials,medium
+aster,purple,Perennials,medium
+aster,blue,Perennials,medium
+aster,white,Perennials,medium
+astilbe,white,Perennials,low
+astilbe,red,Perennials,low
+astilbe,pink,Perennials,low
+astrantia,purple,Perennials,medium
+astrantia,white,Perennials,medium
+astrantia,red,Perennials,medium
+astrantia,pink,Perennials,medium
+banksia,yellow,"Perennials, Shrubs, Trees",low
+banksia,red,"Perennials, Shrubs, Trees",low
+banksia,brown,"Perennials, Shrubs, Trees",low
+banksia,violet,"Perennials, Shrubs, Trees",low
+banksia,green,"Perennials, Shrubs, Trees",low
+banksia,orange,"Perennials, Shrubs, Trees",low
+baptisia,yellow,Perennials,low
+baptisia,blue,Perennials,low
+baptisia,white,Perennials,low
+begonia,yellow,"Annuals, Bulbs, Perennials",low
+begonia,red,"Annuals, Bulbs, Perennials",low
+begonia,pink,"Annuals, Bulbs, Perennials",low
+begonia,white,"Annuals, Bulbs, Perennials",low
+begonia,orange,"Annuals, Bulbs, Perennials",low
+bellis,yellow,Perennials,low
+bellis,red,Perennials,low
+bellis,purple,Perennials,low
+bellis,pink,Perennials,low
+bellis,white,Perennials,low
+bergenia,purple,Perennials,low
+bergenia,pink,Perennials,low
+bergenia,red,Perennials,low
+bergenia,white,Perennials,low
+borago,blue,"Annuals, Perennials",low
+borago,pink,"Annuals, Perennials",low
+bougainvillea,yellow,"Climbers, Shrubs, Trees",low
+bougainvillea,red,"Climbers, Shrubs, Trees",low
+bougainvillea,purple,"Climbers, Shrubs, Trees",low
+bougainvillea,pink,"Climbers, Shrubs, Trees",low
+bougainvillea,white,"Climbers, Shrubs, Trees",low
+bougainvillea,orange,"Climbers, Shrubs, Trees",low
+bouvardia,yellow,"Herbs, Shrubs",low
+bouvardia,red,"Herbs, Shrubs",low
+bouvardia,pink,"Herbs, Shrubs",low
+bouvardia,white,"Herbs, Shrubs",low
+bouvardia,orange,"Herbs, Shrubs",low
+brugmansia,yellow,"Shrubs, Trees",low
+brugmansia,red,"Shrubs, Trees",low
+brugmansia,pink,"Shrubs, Trees",low
+brugmansia,white,"Shrubs, Trees",low
+brugmansia,orange,"Shrubs, Trees",low
+buddleia,red,"Shrubs, Trees",low
+buddleia,purple,"Shrubs, Trees",low
+buddleia,blue,"Shrubs, Trees",low
+buddleia,pink,"Shrubs, Trees",low
+buddleia,white,"Shrubs, Trees",low
+calendula,yellow,"Annuals, Herbs, Perennials",low
+calendula,orange,"Annuals, Herbs, Perennials",low
+calluna,purple,Shrubs,low
+calluna,pink,Shrubs,low
+calluna,red,Shrubs,low
+calluna,white,Shrubs,low
+camellia,yellow,"Shrubs, Trees",low
+camellia,red,"Shrubs, Trees",low
+camellia,purple,"Shrubs, Trees",low
+camellia,pink,"Shrubs, Trees",low
+camellia,white,"Shrubs, Trees",low
+campanula,purple,"Annuals, Perennials",low
+campanula,blue,"Annuals, Perennials",low
+campanula,pink,"Annuals, Perennials",low
+campanula,white,"Annuals, Perennials",low
+campanula,lilac,"Annuals, Perennials",low
+canna,yellow,"Bulbs, Perennials",medium
+canna,red,"Bulbs, Perennials",medium
+canna,pink,"Bulbs, Perennials",medium
+canna,white,"Bulbs, Perennials",medium
+canna,cream,"Bulbs, Perennials",medium
+canna,orange,"Bulbs, Perennials",medium
+celosia,yellow,"Annuals, Perennials",low
+celosia,red,"Annuals, Perennials",low
+celosia,purple,"Annuals, Perennials",low
+celosia,pink,"Annuals, Perennials",low
+celosia,white,"Annuals, Perennials",low
+celosia,gold,"Annuals, Perennials",low
+celosia,orange,"Annuals, Perennials",low
+centaurea,yellow,"Annuals, Perennials",low
+centaurea,purple,"Annuals, Perennials",low
+centaurea,blue,"Annuals, Perennials",low
+centaurea,pink,"Annuals, Perennials",low
+centaurea,white,"Annuals, Perennials",low
+chrysanthemum,purple,Perennials,medium
+chrysanthemum,yellow,Perennials,medium
+chrysanthemum,white,Perennials,medium
+chrysanthemum,red,Perennials,medium
+cistus,purple,"Perennials, Shrubs",low
+cistus,pink,"Perennials, Shrubs",low
+cistus,white,"Perennials, Shrubs",low
+clarkia,red,Annuals,low
+clarkia,purple,Annuals,low
+clarkia,pink,Annuals,low
+clarkia,white,Annuals,low
+clarkia,orange,Annuals,low
+claytonia,purple,"Annuals, Bulbs, Perennials",low
+claytonia,white,"Annuals, Bulbs, Perennials",low
+claytonia,red,"Annuals, Bulbs, Perennials",low
+claytonia,pink,"Annuals, Bulbs, Perennials",low
+clerodendrum,yellow,"Climbers, Shrubs, Trees",medium
+clerodendrum,red,"Climbers, Shrubs, Trees",medium
+clerodendrum,purple,"Climbers, Shrubs, Trees",medium
+clerodendrum,pink,"Climbers, Shrubs, Trees",medium
+clerodendrum,white,"Climbers, Shrubs, Trees",medium
+clerodendrum,cream,"Climbers, Shrubs, Trees",medium
+clerodendrum,orange,"Climbers, Shrubs, Trees",medium
+convallaria,white,"Bulbs, Perennials",low
+convallaria,pink,"Bulbs, Perennials",low
+coreopsis,yellow,"Annuals, Perennials",low
+coreopsis,red,"Annuals, Perennials",low
+coreopsis,pink,"Annuals, Perennials",low
+coreopsis,maroon,"Annuals, Perennials",low
+coreopsis,lavender,"Annuals, Perennials",low
+coreopsis,orange,"Annuals, Perennials",low
+cosmos,yellow,Annuals,low
+cosmos,pink,Annuals,low
+cosmos,white,Annuals,low
+cosmos,orange,Annuals,low
+cosmos,scarlet,Annuals,low
+crocosmia,yellow,"Bulbs, Perennials",low
+crocosmia,orange,"Bulbs, Perennials",low
+crocosmia,red,"Bulbs, Perennials",low
+crocus,yellow,Bulbs,low
+crocus,purple,Bulbs,low
+crocus,blue,Bulbs,low
+crocus,white,Bulbs,low
+crocus,cream,Bulbs,low
+cyclamen,red,"Bulbs, Perennials",low
+cyclamen,rose,"Bulbs, Perennials",low
+cyclamen,purple,"Bulbs, Perennials",low
+cyclamen,pink,"Bulbs, Perennials",low
+cyclamen,white,"Bulbs, Perennials",low
+cymbidium,yellow,Perennials,low
+cymbidium,red,Perennials,low
+cymbidium,pink,Perennials,low
+cymbidium,brown,Perennials,low
+cymbidium,white,Perennials,low
+cymbidium,green,Perennials,low
+cymbidium,orange,Perennials,low
+dahlia,blue,"Bulbs, Perennials",medium
+datura,purple,"Annuals, Perennials",low
+datura,yellow,"Annuals, Perennials",low
+datura,white,"Annuals, Perennials",low
+datura,pink,"Annuals, Perennials",low
+delosperma,yellow,"Cactus - Succulents, Perennials",low
+delosperma,red,"Cactus - Succulents, Perennials",low
+delosperma,purple,"Cactus - Succulents, Perennials",low
+delosperma,pink,"Cactus - Succulents, Perennials",low
+delosperma,white,"Cactus - Succulents, Perennials",low
+delosperma,orange,"Cactus - Succulents, Perennials",low
+delphinium,yellow,Perennials,medium
+delphinium,red,Perennials,medium
+delphinium,blue,Perennials,medium
+delphinium,pink,Perennials,medium
+delphinium,violet,Perennials,medium
+delphinium,white,Perennials,medium
+deutzia,white,Shrubs,low
+deutzia,red,Shrubs,low
+deutzia,pink,Shrubs,low
+dianthus,purple,"Annuals, Perennials, Shrubs",low
+dianthus,pink,"Annuals, Perennials, Shrubs",low
+dianthus,red,"Annuals, Perennials, Shrubs",low
+dianthus,white,"Annuals, Perennials, Shrubs",low
+diascia,yellow,"Annuals, Perennials",low
+diascia,purple,"Annuals, Perennials",low
+diascia,pink,"Annuals, Perennials",low
+diascia,white,"Annuals, Perennials",low
+diascia,orange,"Annuals, Perennials",low
+dicentra,pink,Perennials,low
+dicentra,red,Perennials,low
+dicentra,white,Perennials,low
+dietes,purple,Perennials,low
+dietes,yellow,Perennials,low
+dietes,white,Perennials,low
+dietes,brown,Perennials,low
+digitalis,yellow,Perennials,low
+digitalis,red,Perennials,low
+digitalis,purple,Perennials,low
+digitalis,pink,Perennials,low
+digitalis,white,Perennials,low
+dracula,yellow,Perennials,medium
+dracula,red,Perennials,medium
+dracula,purple,Perennials,medium
+dracula,black,Perennials,medium
+dracula,lavender,Perennials,medium
+dracula,white,Perennials,medium
+dryas,yellow,"Perennials, Shrubs",medium
+dryas,white,"Perennials, Shrubs",medium
+dryas,cream,"Perennials, Shrubs",medium
+echinacea,yellow,Perennials,low
+echinacea,red,Perennials,low
+echinacea,purple,Perennials,low
+echinacea,pink,Perennials,low
+echinacea,brown,Perennials,low
+echinacea,white,Perennials,low
+echinacea,orange,Perennials,low
+echinops,purple,Perennials,low
+echinops,blue,Perennials,low
+echinops,white,Perennials,low
+echinops,green,Perennials,low
+echinops,gray,Perennials,low
+emilia,purple,Annuals,low
+emilia,orange,Annuals,low
+emilia,red,Annuals,low
+epimedium,yellow,Perennials,low
+epimedium,red,Perennials,low
+epimedium,purple,Perennials,low
+epimedium,pink,Perennials,low
+epimedium,white,Perennials,low
+epimedium,orange,Perennials,low
+epiphyllum,yellow,Cactus - Succulents,medium
+epiphyllum,red,Cactus - Succulents,medium
+epiphyllum,purple,Cactus - Succulents,medium
+epiphyllum,pink,Cactus - Succulents,medium
+epiphyllum,white,Cactus - Succulents,medium
+epiphyllum,orange,Cactus - Succulents,medium
+eranthis,yellow,"Bulbs, Perennials",low
+eranthis,white,"Bulbs, Perennials",low
+eremurus,yellow,Perennials,low
+eremurus,orange,Perennials,low
+eremurus,pink,Perennials,low
+eremurus,white,Perennials,low
+eryngium,purple,"Annuals, Perennials",low
+eryngium,blue,"Annuals, Perennials",low
+eryngium,green,"Annuals, Perennials",low
+erysimum,yellow,"Annuals, Perennials, Shrubs",low
+erysimum,orange,"Annuals, Perennials, Shrubs",low
+erysimum,red,"Annuals, Perennials, Shrubs",low
+erythronium,yellow,"Bulbs, Perennials",low
+erythronium,red,"Bulbs, Perennials",low
+erythronium,purple,"Bulbs, Perennials",low
+erythronium,pink,"Bulbs, Perennials",low
+erythronium,white,"Bulbs, Perennials",low
+eschscholzia,yellow,"Annuals, Perennials",low
+eschscholzia,orange,"Annuals, Perennials",low
+euphorbia,yellow,"Annuals, Cactus - Succulents, Perennials, Shrubs, Trees",low
+eustoma,purple,"Annuals, Perennials",medium
+eustoma,blue,"Annuals, Perennials",medium
+eustoma,pink,"Annuals, Perennials",medium
+eustoma,white,"Annuals, Perennials",medium
+eustoma,cream,"Annuals, Perennials",medium
+eustoma,lilac,"Annuals, Perennials",medium
+felicia,yellow,"Annuals, Perennials, Shrubs",low
+felicia,purple,"Annuals, Perennials, Shrubs",low
+felicia,blue,"Annuals, Perennials, Shrubs",low
+felicia,white,"Annuals, Perennials, Shrubs",low
+felicia,lilac,"Annuals, Perennials, Shrubs",low
+forsythia,yellow,Shrubs,low
+freesia,yellow,"Bulbs, Perennials",low
+freesia,red,"Bulbs, Perennials",low
+freesia,purple,"Bulbs, Perennials",low
+freesia,pink,"Bulbs, Perennials",low
+freesia,lavender,"Bulbs, Perennials",low
+freesia,white,"Bulbs, Perennials",low
+freesia,orange,"Bulbs, Perennials",low
+fritillaria,yellow,"Bulbs, Perennials",low
+fritillaria,orange,"Bulbs, Perennials",low
+fritillaria,red,"Bulbs, Perennials",low
+fritillaria,green,"Bulbs, Perennials",low
+fuchsia,yellow,"Shrubs, Trees",low
+fuchsia,red,"Shrubs, Trees",low
+fuchsia,fuchsia,"Shrubs, Trees",low
+fuchsia,purple,"Shrubs, Trees",low
+fuchsia,white,"Shrubs, Trees",low
+fuchsia,orange,"Shrubs, Trees",low
+gaillardia,yellow,"Annuals, Perennials",low
+gaillardia,red,"Annuals, Perennials",low
+gaillardia,purple,"Annuals, Perennials",low
+gaillardia,brown,"Annuals, Perennials",low
+gaillardia,orange,"Annuals, Perennials",low
+galanthus,white,"Bulbs, Perennials",low
+gardenia,yellow,"Shrubs, Trees",hard
+gardenia,white,"Shrubs, Trees",hard
+gardenia,cream,"Shrubs, Trees",hard
+gazania,yellow,"Annuals, Perennials",low
+gazania,red,"Annuals, Perennials",low
+gazania,pink,"Annuals, Perennials",low
+gazania,white,"Annuals, Perennials",low
+gazania,orange,"Annuals, Perennials",low
+gentiana,yellow,"Annuals, Perennials",low
+gentiana,red,"Annuals, Perennials",low
+gentiana,purple,"Annuals, Perennials",low
+gentiana,blue,"Annuals, Perennials",low
+gentiana,white,"Annuals, Perennials",low
+geranium,red,"Annuals, Perennials",low
+geranium,purple,"Annuals, Perennials",low
+geranium,blue,"Annuals, Perennials",low
+geranium,pink,"Annuals, Perennials",low
+geranium,white,"Annuals, Perennials",low
+gerbera,blue,Perennials,low
+geum,yellow,Perennials,low
+geum,red,Perennials,low
+geum,pink,Perennials,low
+geum,white,Perennials,low
+geum,orange,Perennials,low
+gladiolus,yellow,"Bulbs, Perennials",low
+gladiolus,red,"Bulbs, Perennials",low
+gladiolus,purple,"Bulbs, Perennials",low
+gladiolus,pink,"Bulbs, Perennials",low
+gladiolus,lavender,"Bulbs, Perennials",low
+gladiolus,white,"Bulbs, Perennials",low
+gladiolus,green,"Bulbs, Perennials",low
+gloriosa,yellow,"Annuals, Bulbs, Climbers, Perennials",medium
+gloriosa,orange,"Annuals, Bulbs, Climbers, Perennials",medium
+gloriosa,red,"Annuals, Bulbs, Climbers, Perennials",medium
+gloriosa,pink,"Annuals, Bulbs, Climbers, Perennials",medium
+gomphrena,yellow,"Annuals, Perennials",low
+gomphrena,red,"Annuals, Perennials",low
+gomphrena,purple,"Annuals, Perennials",low
+gomphrena,pink,"Annuals, Perennials",low
+gomphrena,white,"Annuals, Perennials",low
+gomphrena,orange,"Annuals, Perennials",low
+grevillea,yellow,"Shrubs, Trees",low
+grevillea,red,"Shrubs, Trees",low
+grevillea,purple,"Shrubs, Trees",low
+grevillea,white,"Shrubs, Trees",low
+grevillea,orange,"Shrubs, Trees",low
+gypsophila,white,"Annuals, Perennials",low
+gypsophila,pink,"Annuals, Perennials",low
+hamamelis,yellow,"Shrubs, Trees",low
+hamamelis,red,"Shrubs, Trees",low
+helenium,brown,"Annuals, Perennials",medium
+helenium,yellow,"Annuals, Perennials",medium
+helenium,orange,"Annuals, Perennials",medium
+helenium,red,"Annuals, Perennials",medium
+helianthus,yellow,"Annuals, Perennials",low
+helianthus,red,"Annuals, Perennials",low
+helianthus,purple,"Annuals, Perennials",low
+helianthus,brown,"Annuals, Perennials",low
+helianthus,cream,"Annuals, Perennials",low
+helianthus,orange,"Annuals, Perennials",low
+heliconia,yellow,Perennials,low
+heliconia,red,Perennials,low
+heliconia,pink,Perennials,low
+heliconia,green,Perennials,low
+heliconia,orange,Perennials,low
+helleborus,yellow,Perennials,low
+helleborus,purple,Perennials,low
+helleborus,black,Perennials,low
+helleborus,pink,Perennials,low
+helleborus,green,Perennials,low
+helleborus,white,Perennials,low
+hibiscus,yellow,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,red,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,purple,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,pink,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,blue,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,white,"Annuals, Perennials, Shrubs, Trees",low
+hibiscus,orange,"Annuals, Perennials, Shrubs, Trees",low
+hippeastrum,yellow,Bulbs,low
+hippeastrum,red,Bulbs,low
+hippeastrum,pink,Bulbs,low
+hippeastrum,white,Bulbs,low
+hippeastrum,green,Bulbs,low
+hippeastrum,orange,Bulbs,low
+hosta,lavender,Perennials,low
+hosta,white,Perennials,low
+hosta,purple,Perennials,low
+hoya,red,"Climbers, Perennials, Shrubs",low
+hoya,purple,"Climbers, Perennials, Shrubs",low
+hoya,pink,"Climbers, Perennials, Shrubs",low
+hoya,white,"Climbers, Perennials, Shrubs",low
+hoya,green,"Climbers, Perennials, Shrubs",low
+hoya,orange,"Climbers, Perennials, Shrubs",low
+hyacinthus,yellow,Bulbs,low
+hyacinthus,red,Bulbs,low
+hyacinthus,purple,Bulbs,low
+hyacinthus,blue,Bulbs,low
+hyacinthus,pink,Bulbs,low
+hyacinthus,white,Bulbs,low
+hyacinthus,orange,Bulbs,low
+hydrangea,red,"Climbers, Shrubs, Trees",low
+hydrangea,purple,"Climbers, Shrubs, Trees",low
+hydrangea,blue,"Climbers, Shrubs, Trees",low
+hydrangea,pink,"Climbers, Shrubs, Trees",low
+hydrangea,white,"Climbers, Shrubs, Trees",low
+hypericum,yellow,"Annuals, Perennials, Shrubs, Trees",low
+hypoxis,yellow,Perennials,low
+hyssopus,purple,"Perennials, Shrubs",low
+hyssopus,blue,"Perennials, Shrubs",low
+hyssopus,pink,"Perennials, Shrubs",low
+hyssopus,white,"Perennials, Shrubs",low
+iberis,lilac,"Annuals, Perennials, Shrubs",medium
+iberis,white,"Annuals, Perennials, Shrubs",medium
+iberis,pink,"Annuals, Perennials, Shrubs",medium
+impatiens,yellow,"Annuals, Perennials",low
+impatiens,red,"Annuals, Perennials",low
+impatiens,purple,"Annuals, Perennials",low
+impatiens,blue,"Annuals, Perennials",low
+impatiens,pink,"Annuals, Perennials",low
+impatiens,white,"Annuals, Perennials",low
+impatiens,orange,"Annuals, Perennials",low
+ipomoea,yellow,"Annuals, Climbers, Perennials, Shrubs, Trees",low
+ipomoea,red,"Annuals, Climbers, Perennials, Shrubs, Trees",low
+ipomoea,purple,"Annuals, Climbers, Perennials, Shrubs, Trees",low
+ipomoea,blue,"Annuals, Climbers, Perennials, Shrubs, Trees",low
+ipomoea,white,"Annuals, Climbers, Perennials, Shrubs, Trees",low
+iris,yellow,Perennials,low
+iris,red,Perennials,low
+iris,purple,Perennials,low
+iris,black,Perennials,low
+iris,blue,Perennials,low
+iris,pink,Perennials,low
+iris,brown,Perennials,low
+iris,white,Perennials,low
+iris,orange,Perennials,low
+ixora,yellow,"Shrubs, Trees",low
+ixora,red,"Shrubs, Trees",low
+ixora,pink,"Shrubs, Trees",low
+ixora,white,"Shrubs, Trees",low
+ixora,orange,"Shrubs, Trees",low
+jacaranda,purple,"Shrubs, Trees",low
+jacaranda,blue,"Shrubs, Trees",low
+jasione,purple,"Annuals, Perennials",low
+jasione,blue,"Annuals, Perennials",low
+jasminum,yellow,"Climbers, Shrubs",low
+jasminum,white,"Climbers, Shrubs",low
+justicia,yellow,"Perennials, Shrubs",low
+justicia,red,"Perennials, Shrubs",low
+justicia,pink,"Perennials, Shrubs",low
+justicia,white,"Perennials, Shrubs",low
+justicia,cream,"Perennials, Shrubs",low
+justicia,orange,"Perennials, Shrubs",low
+kalanchoe,orange,"Cactus - Succulents, Perennials, Shrubs",low
+kalanchoe,red,"Cactus - Succulents, Perennials, Shrubs",low
+kalanchoe,pink,"Cactus - Succulents, Perennials, Shrubs",low
+kalanchoe,white,"Cactus - Succulents, Perennials, Shrubs",low
+kalmia,purple,Shrubs,low
+kalmia,pink,Shrubs,low
+kalmia,white,Shrubs,low
+kalmia,lavender,Shrubs,low
+kerria,yellow,Shrubs,low
+kniphofia,yellow,Perennials,low
+kniphofia,orange,Perennials,low
+kniphofia,red,Perennials,low
+kniphofia,cream,Perennials,low
+kolkwitzia,yellow,Shrubs,low
+kolkwitzia,pink,Shrubs,low
+kolkwitzia,white,Shrubs,low
+kunzea,yellow,"Shrubs, Trees",low
+kunzea,red,"Shrubs, Trees",low
+kunzea,purple,"Shrubs, Trees",low
+kunzea,pink,"Shrubs, Trees",low
+kunzea,white,"Shrubs, Trees",low
+lantana,yellow,"Annuals, Perennials, Shrubs",low
+lantana,red,"Annuals, Perennials, Shrubs",low
+lantana,pink,"Annuals, Perennials, Shrubs",low
+lantana,lavender,"Annuals, Perennials, Shrubs",low
+lantana,white,"Annuals, Perennials, Shrubs",low
+lantana,orange,"Annuals, Perennials, Shrubs",low
+lathyrus,yellow,"Annuals, Climbers, Perennials",low
+lathyrus,red,"Annuals, Climbers, Perennials",low
+lathyrus,magenta,"Annuals, Climbers, Perennials",low
+lathyrus,purple,"Annuals, Climbers, Perennials",low
+lathyrus,pink,"Annuals, Climbers, Perennials",low
+lathyrus,blue,"Annuals, Climbers, Perennials",low
+lathyrus,lavender,"Annuals, Climbers, Perennials",low
+lathyrus,white,"Annuals, Climbers, Perennials",low
+lathyrus,cream,"Annuals, Climbers, Perennials",low
+lathyrus,scarlet,"Annuals, Climbers, Perennials",low
+lavandula,purple,"Herbs, Perennials, Shrubs",medium
+lavandula,blue,"Herbs, Perennials, Shrubs",medium
+lavandula,pink,"Herbs, Perennials, Shrubs",medium
+lavandula,lavender,"Herbs, Perennials, Shrubs",medium
+lavandula,white,"Herbs, Perennials, Shrubs",medium
+leontopodium,yellow,Perennials,low
+leucojum,white,"Bulbs, Perennials",low
+leucojum,green,"Bulbs, Perennials",low
+lewisia,red,Perennials,low
+lewisia,purple,Perennials,low
+lewisia,pink,Perennials,low
+lewisia,white,Perennials,low
+lewisia,orange,Perennials,low
+liatris,rose,Perennials,low
+liatris,purple,Perennials,low
+liatris,pink,Perennials,low
+liatris,lavender,Perennials,low
+liatris,violet,Perennials,low
+liatris,white,Perennials,low
+lilium,orange,"Bulbs, Perennials",low
+lilium,yellow,"Bulbs, Perennials",low
+lilium,white,"Bulbs, Perennials",low
+lilium,red,"Bulbs, Perennials",low
+limonium,yellow,"Annuals, Perennials, Shrubs",low
+limonium,purple,"Annuals, Perennials, Shrubs",low
+limonium,blue,"Annuals, Perennials, Shrubs",low
+limonium,pink,"Annuals, Perennials, Shrubs",low
+limonium,white,"Annuals, Perennials, Shrubs",low
+lobelia,red,"Annuals, Perennials, Shrubs",low
+lobelia,purple,"Annuals, Perennials, Shrubs",low
+lobelia,blue,"Annuals, Perennials, Shrubs",low
+lobelia,pink,"Annuals, Perennials, Shrubs",low
+lobelia,white,"Annuals, Perennials, Shrubs",low
+lonicera,yellow,"Climbers, Shrubs",low
+lonicera,red,"Climbers, Shrubs",low
+lonicera,pink,"Climbers, Shrubs",low
+lonicera,white,"Climbers, Shrubs",low
+lonicera,orange,"Climbers, Shrubs",low
+lupinus,yellow,"Annuals, Perennials",low
+lupinus,purple,"Annuals, Perennials",low
+lupinus,blue,"Annuals, Perennials",low
+lupinus,pink,"Annuals, Perennials",low
+lupinus,white,"Annuals, Perennials",low
+lycoris,yellow,"Bulbs, Perennials",low
+lycoris,red,"Bulbs, Perennials",low
+lycoris,pink,"Bulbs, Perennials",low
+lycoris,white,"Bulbs, Perennials",low
+lycoris,orange,"Bulbs, Perennials",low
+magnolia,purple,"Shrubs, Trees",low
+magnolia,yellow,"Shrubs, Trees",low
+magnolia,white,"Shrubs, Trees",low
+magnolia,pink,"Shrubs, Trees",low
+malva,purple,"Annuals, Perennials",low
+malva,pink,"Annuals, Perennials",low
+malva,white,"Annuals, Perennials",low
+mandevilla,yellow,"Annuals, Climbers, Perennials",medium
+mandevilla,pink,"Annuals, Climbers, Perennials",medium
+mandevilla,red,"Annuals, Climbers, Perennials",medium
+mandevilla,white,"Annuals, Climbers, Perennials",medium
+mimosa,purple,"Annuals, Perennials, Shrubs, Trees",medium
+mimosa,pink,"Annuals, Perennials, Shrubs, Trees",medium
+mimosa,white,"Annuals, Perennials, Shrubs, Trees",medium
+monarda,purple,Perennials,low
+monarda,pink,Perennials,low
+monarda,red,Perennials,low
+monarda,white,Perennials,low
+muscari,yellow,Bulbs,low
+muscari,blue,Bulbs,low
+muscari,pink,Bulbs,low
+muscari,white,Bulbs,low
+myosotis,yellow,Perennials,low
+myosotis,blue,Perennials,low
+myosotis,pink,Perennials,low
+myosotis,white,Perennials,low
+myrtus,white,"Shrubs, Trees",low
+narcissus,yellow,"Bulbs, Perennials",low
+narcissus,white,"Bulbs, Perennials",low
+nelumbo,yellow,Perennials,low
+nelumbo,white,Perennials,low
+nelumbo,pink,Perennials,low
+nemesia,yellow,"Annuals, Perennials, Shrubs",low
+nemesia,red,"Annuals, Perennials, Shrubs",low
+nemesia,purple,"Annuals, Perennials, Shrubs",low
+nemesia,blue,"Annuals, Perennials, Shrubs",low
+nemesia,pink,"Annuals, Perennials, Shrubs",low
+nemesia,white,"Annuals, Perennials, Shrubs",low
+nemesia,cream,"Annuals, Perennials, Shrubs",low
+nemesia,orange,"Annuals, Perennials, Shrubs",low
+nemophila,purple,Annuals,low
+nemophila,blue,Annuals,low
+nepeta,yellow,Perennials,low
+nepeta,purple,Perennials,low
+nepeta,blue,Perennials,low
+nepeta,pink,Perennials,low
+nepeta,white,Perennials,low
+nerine,orange,"Bulbs, Perennials",medium
+nerine,pink,"Bulbs, Perennials",medium
+nerine,red,"Bulbs, Perennials",medium
+nerine,white,"Bulbs, Perennials",medium
+nerium,yellow,"Shrubs, Trees",low
+nerium,red,"Shrubs, Trees",low
+nerium,purple,"Shrubs, Trees",low
+nerium,pink,"Shrubs, Trees",low
+nerium,white,"Shrubs, Trees",low
+nerium,cream,"Shrubs, Trees",low
+nigella,yellow,Annuals,low
+nigella,blue,Annuals,low
+nigella,pink,Annuals,low
+nigella,white,Annuals,low
+obregonia,yellow,Cactus - Succulents,medium
+obregonia,white,Cactus - Succulents,medium
+obregonia,pink,Cactus - Succulents,medium
+oenothera,yellow,"Annuals, Perennials",low
+oenothera,pink,"Annuals, Perennials",low
+oenothera,white,"Annuals, Perennials",low
+opuntia,yellow,Cactus - Succulents,low
+opuntia,pink,Cactus - Succulents,low
+opuntia,red,Cactus - Succulents,low
+opuntia,white,Cactus - Succulents,low
+ornithogalum,orange,"Bulbs, Perennials",low
+ornithogalum,yellow,"Bulbs, Perennials",low
+ornithogalum,white,"Bulbs, Perennials",low
+osteospermum,yellow,"Annuals, Perennials, Shrubs",low
+osteospermum,purple,"Annuals, Perennials, Shrubs",low
+osteospermum,blue,"Annuals, Perennials, Shrubs",low
+osteospermum,pink,"Annuals, Perennials, Shrubs",low
+osteospermum,white,"Annuals, Perennials, Shrubs",low
+osteospermum,cream,"Annuals, Perennials, Shrubs",low
+oxalis,purple,"Annuals, Bulbs, Perennials",low
+oxalis,yellow,"Annuals, Bulbs, Perennials",low
+oxalis,pink,"Annuals, Bulbs, Perennials",low
+oxalis,white,"Annuals, Bulbs, Perennials",low
+paeonia,yellow,"Perennials, Shrubs",low
+paeonia,red,"Perennials, Shrubs",low
+paeonia,purple,"Perennials, Shrubs",low
+paeonia,pink,"Perennials, Shrubs",low
+paeonia,white,"Perennials, Shrubs",low
+papaver,yellow,"Annuals, Perennials",low
+papaver,red,"Annuals, Perennials",low
+papaver,purple,"Annuals, Perennials",low
+papaver,pink,"Annuals, Perennials",low
+papaver,white,"Annuals, Perennials",low
+papaver,orange,"Annuals, Perennials",low
+passiflora,purple,"Annuals, Climbers, Perennials, Shrubs, Trees",medium
+passiflora,white,"Annuals, Climbers, Perennials, Shrubs, Trees",medium
+passiflora,blue,"Annuals, Climbers, Perennials, Shrubs, Trees",medium
+pelargonium,red,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+pelargonium,purple,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+pelargonium,pink,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+pelargonium,white,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+pelargonium,orange,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+penstemon,yellow,Perennials,low
+penstemon,red,Perennials,low
+penstemon,purple,Perennials,low
+penstemon,blue,Perennials,low
+penstemon,white,Perennials,low
+perovskia,purple,"Perennials, Shrubs",low
+perovskia,blue,"Perennials, Shrubs",low
+petunia,yellow,"Annuals, Perennials",low
+petunia,red,"Annuals, Perennials",low
+petunia,purple,"Annuals, Perennials",low
+petunia,blue,"Annuals, Perennials",low
+petunia,pink,"Annuals, Perennials",low
+petunia,white,"Annuals, Perennials",low
+phacelia,purple,"Annuals, Perennials",low
+phacelia,blue,"Annuals, Perennials",low
+phlox,yellow,"Annuals, Perennials",medium
+phlox,red,"Annuals, Perennials",medium
+phlox,rose,"Annuals, Perennials",medium
+phlox,magenta,"Annuals, Perennials",medium
+phlox,purple,"Annuals, Perennials",medium
+phlox,pink,"Annuals, Perennials",medium
+phlox,lavender,"Annuals, Perennials",medium
+phlox,white,"Annuals, Perennials",medium
+platycodon,purple,Perennials,low
+platycodon,blue,Perennials,low
+platycodon,pink,Perennials,low
+platycodon,white,Perennials,low
+plumbago,blue,"Annuals, Climbers, Perennials, Shrubs",low
+plumbago,white,"Annuals, Climbers, Perennials, Shrubs",low
+plumeria,yellow,"Shrubs, Trees",low
+plumeria,white,"Shrubs, Trees",low
+plumeria,red,"Shrubs, Trees",low
+plumeria,pink,"Shrubs, Trees",low
+polygonatum,white,Perennials,low
+polygonatum,green,Perennials,low
+polygonatum,pink,Perennials,low
+potentilla,yellow,"Annuals, Perennials, Shrubs",low
+potentilla,red,"Annuals, Perennials, Shrubs",low
+potentilla,purple,"Annuals, Perennials, Shrubs",low
+potentilla,pink,"Annuals, Perennials, Shrubs",low
+potentilla,white,"Annuals, Perennials, Shrubs",low
+primula,yellow,Perennials,low
+primula,red,Perennials,low
+primula,purple,Perennials,low
+primula,blue,Perennials,low
+primula,pink,Perennials,low
+primula,green,Perennials,low
+primula,white,Perennials,low
+primula,orange,Perennials,low
+protea,yellow,"Shrubs, Trees",low
+protea,red,"Shrubs, Trees",low
+protea,purple,"Shrubs, Trees",low
+protea,white,"Shrubs, Trees",low
+protea,green,"Shrubs, Trees",low
+protea,orange,"Shrubs, Trees",low
+prunus,purple,"Shrubs, Trees",low
+prunus,white,"Shrubs, Trees",low
+prunus,red,"Shrubs, Trees",low
+prunus,pink,"Shrubs, Trees",low
+pulmonaria,purple,Perennials,low
+pulmonaria,blue,Perennials,low
+pulmonaria,pink,Perennials,low
+pulmonaria,white,Perennials,low
+quesnelia,yellow,"Cactus - Succulents, Perennials",low
+quesnelia,blue,"Cactus - Succulents, Perennials",low
+quesnelia,red,"Cactus - Succulents, Perennials",low
+quesnelia,pink,"Cactus - Succulents, Perennials",low
+rafflesia,white,,low
+rafflesia,brown,,low
+ranunculus,yellow,"Annuals, Bulbs, Perennials",low
+ranunculus,white,"Annuals, Bulbs, Perennials",low
+ranunculus,red,"Annuals, Bulbs, Perennials",low
+ranunculus,pink,"Annuals, Bulbs, Perennials",low
+rhododendron,red,"Shrubs, Trees",low
+rhododendron,purple,"Shrubs, Trees",low
+rhododendron,pink,"Shrubs, Trees",low
+rhododendron,white,"Shrubs, Trees",low
+rhododendron,gold,"Shrubs, Trees",low
+rhododendron,orange,"Shrubs, Trees",low
+rondeletia,yellow,"Shrubs, Trees",low
+rondeletia,white,"Shrubs, Trees",low
+rondeletia,red,"Shrubs, Trees",low
+rondeletia,pink,"Shrubs, Trees",low
+rosa,yellow,"Climbers, Roses, Shrubs",medium
+rosa,red,"Climbers, Roses, Shrubs",medium
+rosa,purple,"Climbers, Roses, Shrubs",medium
+rosa,pink,"Climbers, Roses, Shrubs",medium
+rosa,white,"Climbers, Roses, Shrubs",medium
+rudbeckia,yellow,"Annuals, Perennials",low
+rudbeckia,red,"Annuals, Perennials",low
+rudbeckia,black,"Annuals, Perennials",low
+rudbeckia,brown,"Annuals, Perennials",low
+rudbeckia,green,"Annuals, Perennials",low
+rudbeckia,orange,"Annuals, Perennials",low
+salvia,blue,"Annuals, Perennials, Shrubs",low
+salvia,red,"Annuals, Perennials, Shrubs",low
+salvia,pink,"Annuals, Perennials, Shrubs",low
+salvia,white,"Annuals, Perennials, Shrubs",low
+sandersonia,yellow,"Climbers, Perennials",low
+sandersonia,orange,"Climbers, Perennials",low
+saxifraga,yellow,Perennials,low
+saxifraga,red,Perennials,low
+saxifraga,purple,Perennials,low
+saxifraga,pink,Perennials,low
+saxifraga,white,Perennials,low
+scabiosa,yellow,"Annuals, Perennials",low
+scabiosa,red,"Annuals, Perennials",low
+scabiosa,purple,"Annuals, Perennials",low
+scabiosa,blue,"Annuals, Perennials",low
+scabiosa,pink,"Annuals, Perennials",low
+scabiosa,white,"Annuals, Perennials",low
+scilla,purple,Bulbs,low
+scilla,blue,Bulbs,low
+scilla,white,Bulbs,low
+sedum,yellow,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+sedum,red,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+sedum,purple,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+sedum,pink,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+sedum,white,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+sedum,orange,"Annuals, Cactus - Succulents, Perennials, Shrubs",low
+solidago,yellow,Perennials,low
+spiraea,yellow,Shrubs,low
+spiraea,purple,Shrubs,low
+spiraea,pink,Shrubs,low
+spiraea,white,Shrubs,low
+spiraea,cream,Shrubs,low
+strelitzia,yellow,"Perennials, Shrubs",low
+strelitzia,red,"Perennials, Shrubs",low
+strelitzia,purple,"Perennials, Shrubs",low
+strelitzia,blue,"Perennials, Shrubs",low
+strelitzia,orange,"Perennials, Shrubs",low
+syringa,yellow,"Shrubs, Trees",low
+syringa,red,"Shrubs, Trees",low
+syringa,blue,"Shrubs, Trees",low
+syringa,pink,"Shrubs, Trees",low
+syringa,white,"Shrubs, Trees",low
+tagetes,yellow,"Annuals, Perennials, Shrubs",low
+tagetes,orange,"Annuals, Perennials, Shrubs",low
+tagetes,white,"Annuals, Perennials, Shrubs",low
+tanacetum,yellow,"Annuals, Perennials, Shrubs",medium
+tanacetum,white,"Annuals, Perennials, Shrubs",medium
+taraxacum,yellow,Perennials,low
+taraxacum,white,Perennials,low
+tigridia,yellow,Bulbs,low
+tigridia,red,Bulbs,low
+tigridia,pink,Bulbs,low
+tigridia,white,Bulbs,low
+tigridia,cream,Bulbs,low
+tigridia,orange,Bulbs,low
+tigridia,scarlet,Bulbs,low
+torenia,yellow,Annuals,medium
+torenia,purple,Annuals,medium
+torenia,blue,Annuals,medium
+torenia,pink,Annuals,medium
+torenia,white,Annuals,medium
+tradescantia,red,Perennials,low
+tradescantia,purple,Perennials,low
+tradescantia,blue,Perennials,low
+tradescantia,pink,Perennials,low
+tradescantia,white,Perennials,low
+tricyrtis,purple,Perennials,low
+tricyrtis,yellow,Perennials,low
+tricyrtis,white,Perennials,low
+tricyrtis,red,Perennials,low
+trillium,yellow,Perennials,low
+trillium,red,Perennials,low
+trillium,purple,Perennials,low
+trillium,pink,Perennials,low
+trillium,maroon,Perennials,low
+trillium,white,Perennials,low
+trollius,yellow,Perennials,low
+trollius,orange,Perennials,low
+trollius,white,Perennials,low
+tropaeolum,yellow,"Annuals, Perennials",low
+tropaeolum,red,"Annuals, Perennials",low
+tropaeolum,purple,"Annuals, Perennials",low
+tropaeolum,cream,"Annuals, Perennials",low
+tropaeolum,orange,"Annuals, Perennials",low
+ulex,yellow,Shrubs,low
+ursinia,yellow,"Annuals, Perennials",low
+ursinia,orange,"Annuals, Perennials",low
+ursinia,red,"Annuals, Perennials",low
+valeriana,lavender,Perennials,low
+valeriana,white,Perennials,low
+valeriana,pink,Perennials,low
+verbascum,yellow,"Annuals, Perennials",low
+verbascum,red,"Annuals, Perennials",low
+verbascum,purple,"Annuals, Perennials",low
+verbascum,pink,"Annuals, Perennials",low
+verbascum,white,"Annuals, Perennials",low
+verbena,purple,"Annuals, Perennials",low
+verbena,pink,"Annuals, Perennials",low
+verbena,red,"Annuals, Perennials",low
+verbena,white,"Annuals, Perennials",low
+veronica,purple,Perennials,low
+veronica,blue,Perennials,low
+veronica,pink,Perennials,low
+veronica,white,Perennials,low
+veronicastrum,purple,Perennials,low
+veronicastrum,white,Perennials,low
+veronicastrum,pink,Perennials,low
+vinca,purple,"Perennials, Shrubs",low
+vinca,pink,"Perennials, Shrubs",low
+vinca,red,"Perennials, Shrubs",low
+vinca,white,"Perennials, Shrubs",low
+viola,yellow,"Annuals, Perennials, Shrubs",low
+viola,blue,"Annuals, Perennials, Shrubs",low
+viola,violet,"Annuals, Perennials, Shrubs",low
+viola,white,"Annuals, Perennials, Shrubs",low
+viola,cream,"Annuals, Perennials, Shrubs",low
+watsonia,red,"Bulbs, Perennials",low
+watsonia,purple,"Bulbs, Perennials",low
+watsonia,pink,"Bulbs, Perennials",low
+watsonia,white,"Bulbs, Perennials",low
+watsonia,orange,"Bulbs, Perennials",low
+weigela,yellow,Shrubs,low
+weigela,pink,Shrubs,low
+weigela,red,Shrubs,low
+weigela,white,Shrubs,low
+wisteria,blue,Climbers,hard
+wisteria,white,Climbers,hard
+wisteria,pink,Climbers,hard
+wisteria,purple,Climbers,hard
+xanthisma,purple,"Annuals, Perennials",low
+xanthisma,yellow,"Annuals, Perennials",low
+xanthisma,white,"Annuals, Perennials",low
+xeranthemum,purple,Annuals,low
+xeranthemum,pink,Annuals,low
+xeranthemum,white,Annuals,low
+xerochrysum,yellow,"Annuals, Perennials, Shrubs",low
+xerochrysum,red,"Annuals, Perennials, Shrubs",low
+xerochrysum,purple,"Annuals, Perennials, Shrubs",low
+xerochrysum,pink,"Annuals, Perennials, Shrubs",low
+xerochrysum,orange,"Annuals, Perennials, Shrubs",low
+xerophyllum,cream,"Herbs, Perennials",low
+yucca,green,"Cactus - Succulents, Shrubs, Trees",low
+yucca,white,"Cactus - Succulents, Shrubs, Trees",low
+zantedeschia,yellow,"Bulbs, Perennials",low
+zantedeschia,purple,"Bulbs, Perennials",low
+zantedeschia,black,"Bulbs, Perennials",low
+zantedeschia,pink,"Bulbs, Perennials",low
+zantedeschia,white,"Bulbs, Perennials",low
+zantedeschia,orange,"Bulbs, Perennials",low
+zephyranthes,yellow,"Annuals, Bulbs, Perennials",medium
+zephyranthes,pink,"Annuals, Bulbs, Perennials",medium
+zephyranthes,white,"Annuals, Bulbs, Perennials",medium
+zinnia,yellow,"Annuals, Perennials, Shrubs",low
+zinnia,red,"Annuals, Perennials, Shrubs",low
+zinnia,purple,"Annuals, Perennials, Shrubs",low
+zinnia,pink,"Annuals, Perennials, Shrubs",low
+zinnia,white,"Annuals, Perennials, Shrubs",low
+zinnia,orange,"Annuals, Perennials, Shrubs",low
+zygopetalum,purple,"Annuals, Perennials",medium
+zygopetalum,blue,"Annuals, Perennials",medium
+zygopetalum,red,"Annuals, Perennials",medium
+zygopetalum,white,"Annuals, Perennials",medium
