@@ -6,13 +6,13 @@ Yarrow,achillea,purple,Perennials,low,Everlasting love
 Yarrow,achillea,red,Perennials,low,Everlasting love
 Yarrow,achillea,white,Perennials,low,Everlasting love
 Yarrow,achillea,yellow,Perennials,low,Everlasting love
-Snapdragon,antirrhinum,green,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,orange,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,pink,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,purple,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,red,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,white,"Annuals, Perennials",low,Deception; Graciousness
-Snapdragon,antirrhinum,yellow,"Annuals, Perennials",low,Deception; Graciousness
+Snapdragon,antirrhinum,green,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,orange,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,pink,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,purple,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,red,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,white,Annuals,low,Deception; Graciousness
+Snapdragon,antirrhinum,yellow,Annuals,low,Deception; Graciousness
 European columbine,aquilegia,blue,Perennials,low,Foolishness; Folly
 European columbine,aquilegia,pink,Perennials,low,Foolishness; Folly
 European columbine,aquilegia,purple,Perennials,low,Foolishness; Folly
@@ -24,16 +24,18 @@ sea aster,aster,purple,Perennials,medium,Symbol of love; Daintiness
 sea aster,aster,red,Perennials,medium,Symbol of love; Daintiness
 sea aster,aster,white,Perennials,medium,Symbol of love; Daintiness
 sea aster,aster,yellow,Perennials,medium,Symbol of love; Daintiness
-Bellflower,campanula,blue,"Annuals, Perennials",low,Humility
-Bellflower,campanula,lilac,"Annuals, Perennials",low,Humility
-Bellflower,campanula,pink,"Annuals, Perennials",low,Humility
-Bellflower,campanula,purple,"Annuals, Perennials",low,Humility
-Bellflower,campanula,white,"Annuals, Perennials",low,Humility
+Bellflower,campanula,blue,Perennials,low,Humility
+Bellflower,campanula,lilac,Perennials,low,Humility
+Bellflower,campanula,pink,Perennials,low,Humility
+Bellflower,campanula,purple,Perennials,low,Humility
+Bellflower,campanula,white,Perennials,low,Humility
 florist's chrysanthemum,chrysanthemum,red,Perennials,medium,I love you
 florist's chrysanthemum,chrysanthemum,white,Perennials,medium,Truth
 florist's chrysanthemum,chrysanthemum,yellow,Perennials,medium,Slighted love
-convallaria,convallaria,pink,"Bulbs, Perennials",low,Sweetness; Tears of the Virgin Mary; Humility
-convallaria,convallaria,white,"Bulbs, Perennials",low,Sweetness; Tears of the Virgin Mary; Humility
+camellia,,Pink,perennial,,deep longing; yearning; missing someone; admiration
+carnation,,Red,perennial,,love; fascination; distinction; admiration; maternal love
+convallaria,convallaria,pink,Perennials,low,Sweetness; Tears of the Virgin Mary; Humility
+convallaria,convallaria,white,Perennials,low,Sweetness; Tears of the Virgin Mary; Humility
 coreopsis,coreopsis,lavender,"Annuals, Perennials",low,Always cheerful
 coreopsis,coreopsis,maroon,"Annuals, Perennials",low,Always cheerful
 coreopsis,coreopsis,orange,"Annuals, Perennials",low,Always cheerful
@@ -46,10 +48,10 @@ Larkspur,delphinium,red,Perennials,medium,Open heart; Levity; Lightness; Ficklen
 Larkspur,delphinium,violet,Perennials,medium,Open heart; Levity; Lightness; Fickleness
 Larkspur,delphinium,white,Perennials,medium,Open heart; Levity; Lightness; Fickleness
 Larkspur,delphinium,yellow,Perennials,medium,Open heart; Levity; Lightness; Fickleness
-Pinks,dianthus,pink,"Annuals, Perennials, Shrubs",low,Fascination; Female love; Mother’s love
-Pinks,dianthus,purple,"Annuals, Perennials, Shrubs",low,Fascination; Female love; Mother’s love
-Pinks,dianthus,red,"Annuals, Perennials, Shrubs",low,Fascination; Female love; Mother’s love
-Pinks,dianthus,white,"Annuals, Perennials, Shrubs",low,Fascination; Female love; Mother’s love
+Pinks,dianthus,pink,"Annuals",low,Fascination; Female love; Mother’s love; Affection
+Pinks,dianthus,purple,"Annuals",low,Fascination; Female love; Mother’s love; Affection
+Pinks,dianthus,red,"Annuals",low,Fascination; Female love; Mother’s love; Affection
+Pinks,dianthus,white,"Annualss",low,Fascination; Female love; Mother’s love; Affection
 Gladiolus,gladiolus,green,"Bulbs, Perennials",low,Flower of the Gladiators; Integrity; Strength; Victory
 Gladiolus,gladiolus,lavender,"Bulbs, Perennials",low,Flower of the Gladiators; Integrity; Strength; Victory
 Gladiolus,gladiolus,pink,"Bulbs, Perennials",low,Flower of the Gladiators; Integrity; Strength; Victory
@@ -73,16 +75,16 @@ Hyacinth,hyacinthus,purple,Bulbs,low,Sport; Game; Play
 Hyacinth,hyacinthus,red,Bulbs,low,Sport; Game; Play
 Hyacinth,hyacinthus,white,Bulbs,low,Sport; Game; Play
 Hyacinth,hyacinthus,yellow,Bulbs,low,Sport; Game; Play
-Hortensia,hydrangea,blue,"Climbers, Shrubs, Trees",low,Gratitude for being understood; Frigidity and heartlessness
-Hortensia,hydrangea,pink,"Climbers, Shrubs, Trees",low,Gratitude for being understood; Frigidity and heartlessness
-Hortensia,hydrangea,purple,"Climbers, Shrubs, Trees",low,Gratitude for being understood; Frigidity and heartlessness
-Hortensia,hydrangea,red,"Climbers, Shrubs, Trees",low,Gratitude for being understood; Frigidity and heartlessness
-Hortensia,hydrangea,white,"Climbers, Shrubs, Trees",low,Gratitude for being understood; Frigidity and heartlessness
+Hortensia,hydrangea,blue,"Climbers, Shrubs, Trees",low,Gratitude for being understood; gratitude; sincerity
+Hortensia,hydrangea,pink,"Climbers, Shrubs, Trees",low,Gratitude for being understood; gratitude; sincerity
+Hortensia,hydrangea,purple,"Climbers, Shrubs, Trees",low,Gratitude for being understood; gratitude; sincerity
+Hortensia,hydrangea,red,"Climbers, Shrubs, Trees",low,Gratitude for being understood; gratitude; sincerity
+Hortensia,hydrangea,white,"Climbers, Shrubs, Trees",low,Gratitude for being understood; gratitude; sincerity
 candytuft,iberis,lilac,"Annuals, Perennials, Shrubs",medium,Indifference
 candytuft,iberis,pink,"Annuals, Perennials, Shrubs",medium,Indifference
 candytuft,iberis,white,"Annuals, Perennials, Shrubs",medium,Indifference
-Jasmine,jasminum,white,"Climbers, Shrubs",low,Sweet love; Amiability
-Jasmine,jasminum,yellow,"Climbers, Shrubs",low,Grace; Elegance
+Jasmine,jasminum,white,"Climbers, Shrubs",low,Sweet love; Amiability; purity; love; devotion
+Jasmine,jasminum,yellow,"Climbers, Shrubs",low,Grace; Elegance; purity; love; devotion
 sweet pea,lathyrus,blue,"Annuals, Climbers, Perennials",low,Blissful pleasures; Goodbye; Thank you for a lovely time
 sweet pea,lathyrus,cream,"Annuals, Climbers, Perennials",low,Blissful pleasures; Goodbye; Thank you for a lovely time
 sweet pea,lathyrus,lavender,"Annuals, Climbers, Perennials",low,Blissful pleasures; Goodbye; Thank you for a lovely time
@@ -99,8 +101,9 @@ French lavender,lavandula,pink,"Herbs, Perennials, Shrubs",medium,Distrust
 French lavender,lavandula,purple,"Herbs, Perennials, Shrubs",medium,Distrust
 French lavender,lavandula,white,"Herbs, Perennials, Shrubs",medium,Distrust
 lily,lilium,orange,"Bulbs, Perennials",low,Hatred
-lily,lilium,white,"Bulbs, Perennials",low,Virginity; Purity; Heavenly
-lily,lilium,yellow,"Bulbs, Perennials",low,Happy; Gay; Walking on air
+lily,lilium,white,"Bulbs, Perennials",low,Virginity; Purity; Heavenly; innocence
+lily,lilium,yellow,"Bulbs, Perennials",low,Happy; Gay; Walking on 
+lily of the Valley,,White,perennial,,return of happiness; purity; sincerity; humility
 honeysuckle,lonicera,orange,"Climbers, Shrubs",low,Bonds of love
 honeysuckle,lonicera,pink,"Climbers, Shrubs",low,Bonds of love
 honeysuckle,lonicera,red,"Climbers, Shrubs",low,Bonds of love
@@ -159,11 +162,11 @@ Lilac,syringa,pink,"Shrubs, Trees",low,Joy of youth
 Lilac,syringa,red,"Shrubs, Trees",low,Joy of youth
 Lilac,syringa,white,"Shrubs, Trees",low,Joy of youth
 Lilac,syringa,yellow,"Shrubs, Trees",low,Joy of youth
-Marigold,tagetes,orange,"Annuals, Perennials, Shrubs",low,Grief; Jealousy
-Marigold,tagetes,white,"Annuals, Perennials, Shrubs",low,Grief; Jealousy
-Marigold,tagetes,yellow,"Annuals, Perennials, Shrubs",low,Grief; Jealousy
-Tansy,tanacetum,white,"Annuals, Perennials, Shrubs",medium,Hostile thoughts; Declaring war
-Tansy,tanacetum,yellow,"Annuals, Perennials, Shrubs",medium,Hostile thoughts; Declaring war
+Marigold,tagetes,orange,Annual,low,Grief; Jealousy; life; death; remembrance
+Marigold,tagetes,white,Annual,low,Grief; Jealousy; life; death; remembrance
+Marigold,tagetes,yellow,Annual,low,Grief; Jealousy; life; death; remembrance
+Tansy,tanacetum,white,Annual,medium,Hostile thoughts; Declaring war
+Tansy,tanacetum,yellow,Annual,medium,Hostile thoughts; Declaring war
 Spiked Speedwell,veronica,blue,Perennials,low,Feminine fidelity
 Spiked Speedwell,veronica,pink,Perennials,low,Feminine fidelity
 Spiked Speedwell,veronica,purple,Perennials,low,Feminine fidelity
@@ -174,9 +177,9 @@ Arum Lily,zantedeschia,pink,"Bulbs, Perennials",low,Beauty
 Arum Lily,zantedeschia,purple,"Bulbs, Perennials",low,Beauty
 Arum Lily,zantedeschia,white,"Bulbs, Perennials",low,Beauty
 Arum Lily,zantedeschia,yellow,"Bulbs, Perennials",low,Beauty
-elegant zinnia,zinnia,orange,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
-elegant zinnia,zinnia,pink,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
-elegant zinnia,zinnia,purple,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
-elegant zinnia,zinnia,red,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
-elegant zinnia,zinnia,white,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
-elegant zinnia,zinnia,yellow,"Annuals, Perennials, Shrubs",low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,orange,Annuals,low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,pink,Annuals,low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,purple,Annuals,low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,red,Annuals,low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,white,Annuals,low,Thoughts of absent friends; Lasting affection
+elegant zinnia,zinnia,yellow,Annuals,low,Thoughts of absent friends; Lasting affection
