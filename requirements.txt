@@ -3,6 +3,6 @@ Flask-Cors==3.0.10
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.36
 Werkzeug==2.2.2
-gunicorn
+gunicorn==25.0.3
 python-dotenv
 git+https://github.com/MrPeterss/infosci-spark-client.git
