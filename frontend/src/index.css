@@ -1,16 +1,25 @@
 * {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
 }
 
 body {
-  font-family: 'Open Sans', sans-serif;
+  min-width: 320px;
+  font-family: Georgia, "Times New Roman", serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+button,
+input {
+  font: inherit;
+}
+
 #root {
-  width: 100%;
   min-height: 100vh;
 }

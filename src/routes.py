@@ -7,6 +7,7 @@ import json
 import os
 from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
+from flower_recommender import recommend_flowers
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
@@ -49,6 +50,11 @@ def register_routes(app):
     def episodes_search():
         text = request.args.get("title", "")
         return jsonify(json_search(text))
+
+    @app.route("/api/recommendations")
+    def recommendations():
+        query = request.args.get("q", "")
+        return jsonify(recommend_flowers(query))
 
     if USE_LLM:
         from llm_routes import register_chat_route

@@ -1,63 +1,485 @@
-import { useState, useEffect } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
+import { animate, createScope, stagger } from 'animejs'
+import type { Target } from 'animejs'
 import './App.css'
 import SearchIcon from './assets/mag.png'
-import { Episode } from './types'
-import Chat from './Chat'
+import FlowerCoral from './assets/flower-coral.svg'
+import FlowerGold from './assets/flower-gold.svg'
+import FlowerOlive from './assets/flower-olive.svg'
+import FlowerRose from './assets/flower-rose.svg'
+import { RecommendationResponse } from './types'
+
+const EMPTY_RESULTS: RecommendationResponse = {
+  query: '',
+  keywords_used: [],
+  suggestions: [],
+}
+
+const SAMPLE_QUERIES = [
+  'white flowers for gratitude',
+  'low maintenance pink flowers',
+  'yellow flowers that mean friendship',
+]
+
+type FlowerTone = 'coral' | 'gold' | 'olive' | 'rose'
+
+interface DecorativeFlower {
+  top: string
+  left?: string
+  right?: string
+  size: number
+  depth: number
+  hue: FlowerTone
+  image: string
+}
+
+const DECORATIVE_FLOWERS: DecorativeFlower[] = [
+  { top: '6%', left: '4%', size: 118, depth: 1.25, hue: 'coral', image: FlowerCoral },
+  { top: '15%', right: '9%', size: 92, depth: 0.92, hue: 'gold', image: FlowerGold },
+  { top: '28%', left: '1.5%', size: 84, depth: 1.08, hue: 'olive', image: FlowerOlive },
+  { top: '40%', right: '3%', size: 108, depth: 1.36, hue: 'rose', image: FlowerRose },
+  { top: '53%', left: '7%', size: 98, depth: 1.12, hue: 'coral', image: FlowerCoral },
+  { top: '63%', right: '12%', size: 90, depth: 1.03, hue: 'gold', image: FlowerGold },
+  { top: '74%', left: '10%', size: 102, depth: 1.22, hue: 'olive', image: FlowerOlive },
+  { top: '82%', right: '5%', size: 96, depth: 1.14, hue: 'rose', image: FlowerRose },
+  { top: '10%', left: '18%', size: 74, depth: 0.88, hue: 'gold', image: FlowerGold },
+  { top: '21%', right: '22%', size: 72, depth: 0.84, hue: 'coral', image: FlowerCoral },
+  { top: '33%', left: '14%', size: 78, depth: 0.9, hue: 'rose', image: FlowerRose },
+  { top: '47%', right: '18%', size: 70, depth: 0.86, hue: 'olive', image: FlowerOlive },
+  { top: '58%', left: '18%', size: 76, depth: 0.89, hue: 'gold', image: FlowerGold },
+  { top: '69%', right: '24%', size: 74, depth: 0.9, hue: 'coral', image: FlowerCoral },
+  { top: '79%', left: '24%', size: 68, depth: 0.82, hue: 'rose', image: FlowerRose },
+  { top: '87%', right: '20%', size: 72, depth: 0.85, hue: 'olive', image: FlowerOlive },
+]
+
+function formatLabel(values: string[]): string {
+  return values.length > 0 ? values.join(', ') : 'Not listed'
+}
+
+function getMatchStrength(score: number, bestScore: number): number {
+  if (bestScore <= 0) return 0
+  return Math.max(Math.min(score / bestScore, 1), 0.12)
+}
 
 function App(): JSX.Element {
-  const [useLlm, setUseLlm] = useState<boolean | null>(null)
-  const [searchTerm, setSearchTerm] = useState<string>('')
-  const [episodes, setEpisodes] = useState<Episode[]>([])
+  const [query, setQuery] = useState<string>('')
+  const [results, setResults] = useState<RecommendationResponse>(EMPTY_RESULTS)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>('')
+  const appRef = useRef<HTMLElement | null>(null)
+  const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
+  const loadingAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
+
+  const topScore = results.suggestions[0]?.score ?? 0
 
   useEffect(() => {
-    fetch('/api/config').then(r => r.json()).then(data => setUseLlm(data.use_llm))
+    if (!appRef.current) return
+
+    const scope = createScope({
+      root: appRef,
+      mediaQueries: {
+        compact: '(max-width: 760px)',
+        reduceMotion: '(prefers-reduced-motion: reduce)',
+      },
+    })
+
+    scope.add('animateKeywords', () => {
+      if (scope.matches.reduceMotion) return
+
+      animate('.keyword-card', {
+        opacity: [0, 1],
+        translateY: [18, 0],
+        scale: [0.9, 1],
+        delay: stagger(scope.matches.compact ? 55 : 85),
+        duration: scope.matches.compact ? 380 : 540,
+        ease: 'out(4)',
+      })
+    })
+
+    scope.add('animateSuggestions', () => {
+      if (scope.matches.reduceMotion) return
+
+      animate('.suggestion-card', {
+        opacity: [0, 1],
+        translateY: [scope.matches.compact ? 26 : 42, 0],
+        scale: [0.94, 1],
+        delay: stagger(scope.matches.compact ? 90 : 130),
+        duration: scope.matches.compact ? 520 : 760,
+        ease: 'out(4)',
+      })
+
+      animate('.score-fill', {
+        scaleX: (target: Target) => Number((target as HTMLElement).dataset.strength ?? '0'),
+        delay: stagger(scope.matches.compact ? 90 : 130, { start: scope.matches.compact ? 120 : 180 }),
+        duration: scope.matches.compact ? 680 : 900,
+        ease: 'out(5)',
+      })
+
+      animate('.match-chip', {
+        opacity: [0, 1],
+        translateY: [10, 0],
+        delay: stagger(28, { start: scope.matches.compact ? 180 : 260 }),
+        duration: 320,
+        ease: 'out(3)',
+      })
+    })
+
+    scope.add('startLoading', () => {
+      if (scope.matches.reduceMotion) return
+
+      loadingAnimationRef.current?.revert()
+      loadingAnimationRef.current = animate('.loading-dot', {
+        translateY: ['0rem', '-0.75rem'],
+        scale: [0.82, 1.08],
+        opacity: [0.35, 1],
+        delay: stagger(scope.matches.compact ? 100 : 140),
+        duration: scope.matches.compact ? 540 : 760,
+        ease: 'inOutSine',
+        loop: true,
+        alternate: true,
+      })
+    })
+
+    scope.add('stopLoading', () => {
+      loadingAnimationRef.current?.revert()
+      loadingAnimationRef.current = null
+    })
+
+    scope.add(() => {
+      if (scope.matches.reduceMotion || scope.matches.compact || !appRef.current) return
+
+      const root = appRef.current
+      const flowers = Array.from(root.querySelectorAll<HTMLElement>('.bg-flower'))
+      if (flowers.length === 0) return
+
+      let pointerX = window.innerWidth * 0.5
+      let pointerY = window.innerHeight * 0.5
+      let frameId = 0
+      const offsets = flowers.map(() => ({ x: 0, y: 0 }))
+
+      animate('.bg-flower', {
+        opacity: [0, 1],
+        scale: [0.86, 1],
+        delay: stagger(120),
+        duration: 900,
+        ease: 'out(4)',
+      })
+
+      const render = (): void => {
+        flowers.forEach((flower, index) => {
+          const rect = flower.getBoundingClientRect()
+          const centerX = rect.left + rect.width / 2
+          const centerY = rect.top + rect.height / 2
+          const dx = centerX - pointerX
+          const dy = centerY - pointerY
+          const distance = Math.hypot(dx, dy) || 1
+          const radius = rect.width * 0.95 + 90
+          const strength = Math.max(0, 1 - distance / radius)
+          const depth = Number(flower.dataset.depth ?? '1')
+          const desiredX = strength > 0 ? (dx / distance) * strength * 42 * depth : 0
+          const desiredY = strength > 0 ? (dy / distance) * strength * 34 * depth : 0
+
+          offsets[index].x += (desiredX - offsets[index].x) * 0.16
+          offsets[index].y += (desiredY - offsets[index].y) * 0.16
+
+          flower.style.transform = `translate3d(${offsets[index].x}px, ${offsets[index].y}px, 0)`
+        })
+
+        frameId = window.requestAnimationFrame(render)
+      }
+
+      const handlePointerMove = (event: PointerEvent): void => {
+        pointerX = event.clientX
+        pointerY = event.clientY
+      }
+
+      const handlePointerLeave = (): void => {
+        pointerX = -1000
+        pointerY = -1000
+      }
+
+      frameId = window.requestAnimationFrame(render)
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerleave', handlePointerLeave)
+
+      return () => {
+        window.cancelAnimationFrame(frameId)
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerleave', handlePointerLeave)
+      }
+    })
+
+    animationScopeRef.current = scope
+
+    return () => {
+      loadingAnimationRef.current?.revert()
+      animationScopeRef.current?.revert()
+      animationScopeRef.current = null
+    }
   }, [])
 
-  const handleSearch = async (value: string): Promise<void> => {
-    setSearchTerm(value)
-    if (value.trim() === '') { setEpisodes([]); return }
-    const response = await fetch(`/api/episodes?title=${encodeURIComponent(value)}`)
-    const data: Episode[] = await response.json()
-    setEpisodes(data)
+  useEffect(() => {
+    const scope = animationScopeRef.current
+    if (!scope) return
+
+    if (loading) {
+      scope.methods.startLoading?.()
+      return
+    }
+
+    scope.methods.stopLoading?.()
+  }, [loading])
+
+  useEffect(() => {
+    const scope = animationScopeRef.current
+    if (!scope || loading) return
+
+    if (results.keywords_used.length > 0) {
+      scope.methods.animateKeywords?.()
+    }
+
+    if (results.suggestions.length > 0) {
+      scope.methods.animateSuggestions?.()
+    }
+  }, [results, loading])
+
+  const runSearch = async (nextQuery: string): Promise<void> => {
+    const trimmedQuery = nextQuery.trim()
+    setQuery(nextQuery)
+
+    if (!trimmedQuery) {
+      setResults(EMPTY_RESULTS)
+      setError('')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}`)
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+
+      const data: RecommendationResponse = await response.json()
+      setResults(data)
+    } catch (requestError) {
+      setResults(EMPTY_RESULTS)
+      setError(requestError instanceof Error ? requestError.message : 'Search failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  if (useLlm === null) return <></>
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault()
+    await runSearch(query)
+  }
 
   return (
-    <div className={`full-body-container ${useLlm ? 'llm-mode' : ''}`}>
-      {/* Search bar (always shown) */}
-      <div className="top-text">
-        <div className="google-colors">
-          <h1 id="google-4">4</h1>
-          <h1 id="google-3">3</h1>
-          <h1 id="google-0-1">0</h1>
-          <h1 id="google-0-2">0</h1>
-        </div>
-        <div className="input-box" onClick={() => document.getElementById('search-input')?.focus()}>
-          <img src={SearchIcon} alt="search" />
-          <input
-            id="search-input"
-            placeholder="Search for a Keeping up with the Kardashians episode"
-            value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Search results (always shown) */}
-      <div id="answer-box">
-        {episodes.map((episode, index) => (
-          <div key={index} className="episode-item">
-            <h3 className="episode-title">{episode.title}</h3>
-            <p className="episode-desc">{episode.descr}</p>
-            <p className="episode-rating">IMDB Rating: {episode.imdb_rating}</p>
+    <main ref={appRef} className="app-shell">
+      <div className="garden-backdrop" aria-hidden="true">
+        {DECORATIVE_FLOWERS.map((flower, index) => (
+          <div
+            key={`${flower.top}-${flower.left ?? flower.right}-${index}`}
+            className={`bg-flower ${flower.hue}`}
+            data-depth={flower.depth}
+            style={{
+              top: flower.top,
+              left: flower.left,
+              right: flower.right,
+              width: `${flower.size}px`,
+              height: `${flower.size}px`,
+            }}
+          >
+            <img className="bg-flower-image" src={flower.image} alt="" />
           </div>
         ))}
       </div>
 
-      {/* Chat (only when USE_LLM = True in routes.py) */}
-      {useLlm && <Chat onSearchTerm={handleSearch} />}
-    </div>
+      <section className="hero">
+        <div className="hero-copy-block">
+          <p className="eyebrow">FloraSense</p>
+          <h1>FloraSense</h1>
+          <p className="hero-copy">
+            Describe a mood, color, level of care, or meaning, and get a short ranked set of flower
+            suggestions that feels more curated than filtered.
+          </p>
+
+          <form className="search-panel" onSubmit={handleSubmit}>
+            <label className="search-label" htmlFor="flower-query">Describe the flower you want</label>
+            <div className="search-row">
+              <img src={SearchIcon} alt="" aria-hidden="true" />
+              <input
+                id="flower-query"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Try: low maintenance white flowers for love"
+                autoComplete="off"
+              />
+              <button type="submit" disabled={loading}>
+                {loading ? 'Ranking...' : 'Search'}
+              </button>
+            </div>
+          </form>
+
+          <div className="sample-row">
+            {SAMPLE_QUERIES.map((sample) => (
+              <button
+                key={sample}
+                type="button"
+                className="sample-chip"
+                onClick={() => void runSearch(sample)}
+              >
+                {sample}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hero-side">
+          <div className="hero-note">
+            <span>How it reads the query</span>
+            <p>
+              The matcher looks for flower names, colors, meanings, maintenance levels, and plant
+              types, then weights the strongest overlaps.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="page-body">
+        <aside className="query-rail">
+          <div className="rail-heading">
+            <p>Query breakdown</p>
+            <span>{results.keywords_used.length}</span>
+          </div>
+          <p className="rail-copy">
+            Parsed terms from the current request. These animate in after the ranking finishes.
+          </p>
+
+          {loading ? (
+            <div className="rail-empty">
+              Parsing the query and mapping it to flower tags.
+            </div>
+          ) : results.keywords_used.length > 0 ? (
+            <div className="keyword-grid">
+              {results.keywords_used.map((keyword) => (
+                <div key={`${keyword.category}-${keyword.keyword}`} className="keyword-card">
+                  <strong>{keyword.keyword}</strong>
+                  <span>{keyword.category}</span>
+                  <span className="score-pill">+{keyword.score.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rail-empty">
+              {error || 'Run a search to see which words the matching logic used.'}
+            </div>
+          )}
+        </aside>
+
+        <div className="results-column">
+          <header className="results-header">
+            <div>
+              <p className="section-kicker">Ranked flowers</p>
+              <h2>Best matches for this request</h2>
+            </div>
+            <div className="results-meta">
+              <span>{results.suggestions.length}/5 shown</span>
+              {results.query && !loading && <p>For “{results.query}”</p>}
+            </div>
+          </header>
+
+          {loading ? (
+            <div className="loading-panel" aria-live="polite">
+              <div className="loading-bloom" aria-hidden="true">
+                <span className="loading-dot" />
+                <span className="loading-dot" />
+                <span className="loading-dot" />
+                <span className="loading-dot" />
+              </div>
+              <strong>Ranking flowers</strong>
+              <p>Parsing keywords, weighting matches, and sorting the shortlist.</p>
+            </div>
+          ) : results.suggestions.length > 0 ? (
+            <div className="results-stream">
+              {results.suggestions.map((suggestion, index) => {
+                const strength = getMatchStrength(suggestion.score, topScore)
+                const strengthLabel = Math.round(strength * 100)
+
+                return (
+                  <article
+                    key={`${suggestion.name}-${suggestion.scientific_name}`}
+                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
+                  >
+                    {index === 0 && <span className="top-pick-banner">Top recommendation</span>}
+
+                    <div className="card-topline">
+                      <span className="rank-badge">#{index + 1}</span>
+                      <span className="score-badge">{suggestion.score.toFixed(2)}</span>
+                    </div>
+
+                    <div className="card-header">
+                      <h2>{suggestion.name}</h2>
+                      <p>{suggestion.scientific_name}</p>
+                    </div>
+
+                    <div className="score-meter">
+                      <div className="score-track">
+                        <div
+                          className="score-fill"
+                          data-strength={strength.toFixed(3)}
+                          style={{ transform: 'scaleX(0)' }}
+                        />
+                      </div>
+                      <div className="score-caption">
+                        <span>Match strength</span>
+                        <strong>{strengthLabel}%</strong>
+                      </div>
+                    </div>
+
+                    <div className="detail-grid">
+                      <div>
+                        <span className="detail-label">Colors</span>
+                        <p>{formatLabel(suggestion.colors)}</p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Maintenance</span>
+                        <p>{formatLabel(suggestion.maintenance)}</p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Plant Type</span>
+                        <p>{formatLabel(suggestion.plant_types)}</p>
+                      </div>
+                      <div>
+                        <span className="detail-label">Meaning</span>
+                        <p>{formatLabel(suggestion.meanings)}</p>
+                      </div>
+                    </div>
+
+                    <div className="match-list">
+                      {suggestion.matched_keywords.map((match, matchIndex) => (
+                        <div key={`${match.keyword}-${match.category}-${matchIndex}`} className="match-chip">
+                          <span>{match.keyword}</span>
+                          <small>{match.category}</small>
+                          <strong>+{match.score.toFixed(2)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="results-empty">
+              No suggestions yet. Start with a color, flower meaning, or maintenance level.
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
   )
 }
 
