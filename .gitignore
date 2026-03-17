@@ -27,3 +27,5 @@ frontend/node_modules/
 package-lock.json
 
 .env
+
+data_scraping/.ipynb_checkpoints
