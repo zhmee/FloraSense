@@ -27,14 +27,11 @@ occasions_patterns = [
     re.compile(r"Occasions for .*? Flowers", re.IGNORECASE)
 ]
 
-# --- Filter out these words ---
-filtered_words = {"a", "is", "there", "it", "would", "when", "the", "has", "had", "this", "to", "of", "what", "could", "can", "are", "that"}
 
 # --- Preprocessing function ---
 def preprocess_text(text):
     text = text.lower()
     words = text.split()
-    words = [w for w in words if w not in filtered_words]
     return " ".join(words)
 
 # --- Section extraction ---
@@ -91,7 +88,7 @@ for filename in txt_files:
 output_path = os.path.join(folder_path, "flowers_meaning_occasions.csv")
 with open(output_path, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
-    writer.writerow(["Flower", "Meaning", "Special Occasions"])
+    writer.writerow(["name", "meaning", "Special Occasions"])
     for name, sections in sorted(all_flowers.items()):
         writer.writerow([name, sections["Meaning"], sections["Special Occasions"]])
 

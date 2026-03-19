@@ -13,6 +13,11 @@ Pipeline
 4. Compress with TruncatedSVD (Latent Semantic Analysis) to capture latent dimensions
 5. At query time: transform the query -> project into LSA space -> cosine similarity score (scaled)
 6. Return top k results in the JSON shape the frontend expects
+
+Keyword display uses RAKE-NLTK (Rapid Automatic Keyword Extraction) instead of
+raw TF-IDF weights. RAKE extracts multi-word keyphrases from prose without needing
+a trained model, which handles the noisy long-form meaning/occasion text well.
+The retrieval ranking (TF-IDF + LSA + cosine similarity) is unchanged.
 """
 
 import csv
@@ -22,11 +27,13 @@ from pathlib import Path
 
 import numpy as np
 from nltk.stem import PorterStemmer
+from rake_nltk import Rake
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
-
+import nltk
+import ssl
 
 # -------------
 # Config
@@ -146,18 +153,21 @@ def _categorize_term(term: str, flower: dict) -> str:
 
     name_stems: set[str] = set(_tokenize_and_stem(_normalize(flower["name"])))
 
-    if term in color_stems:
-        return "color"
-    if term in maintenance_stems:
-        return "maintenance"
-    if term in plant_type_stems:
-        return "plant type"
-    if term in occasion_stems:
-        return "occasion"
-    if term in meaning_stems:
-        return "meaning"
-    if term in name_stems:
-        return "name"
+    # RAKE returns multi-word phrases; check each word stem individually
+    for word in term.split():
+        stem = _stemmer.stem(word.lower())
+        if stem in color_stems:
+            return "color"
+        if stem in maintenance_stems:
+            return "maintenance"
+        if stem in plant_type_stems:
+            return "plant type"
+        if stem in occasion_stems:
+            return "occasion"
+        if stem in meaning_stems:
+            return "meaning"
+        if stem in name_stems:
+            return "name"
     return "text"
 
 
@@ -337,70 +347,129 @@ def _load_model() -> tuple:
 
     return flowers, vectorizer, svd, tfidf_matrix, lsa_matrix, term_category_map
 
+
+# -------------------------------------------------------
+# RAKE helpers
+# -------------------------------------------------------
+
+def _make_rake() -> Rake:
+    """
+    Build a Rake instance with our custom stopwords merged with RAKE's
+    default English stopwords so domain filler words are suppressed.
+    """
+    return Rake(stopwords=STOPWORDS)
+
+
+def _rake_phrases(text: str, max_phrases: int) -> list[tuple[str, float]]:
+    """
+    Run RAKE on a text string and return up to max_phrases scored phrases
+    as (phrase, score) tuples, highest score first.
+
+    RAKE scores by word co-occurrence within a phrase, so multi-word
+    phrases like "heartfelt gratitude" naturally outscore single words.
+    """
+    r = _make_rake()
+    r.extract_keywords_from_text(text)
+    ranked = r.get_ranked_phrases_with_scores()  # [(score, phrase), ...]
+    # rake_nltk returns (score, phrase) order
+    return [(phrase, score) for score, phrase in ranked[:max_phrases]]
+
+
 # -------------------------------------------------------
 # Keyword extraction helpers  (for frontend)
 # -------------------------------------------------------
 
 def _extract_query_keywords(
-    query_tfidf,
-    vectorizer,
+    query: str,
     term_category_map: dict,
 ) -> list[dict]:
     """
-    Pull the top weighted stems from the TF-IDF query vector.
-    For: Query Breakdown
-    """
-    feature_names = vectorizer.get_feature_names_out()
-    weights = query_tfidf.toarray()[0]
+    Use RAKE to extract the top keyphrases from the raw query string.
+    For: Query Breakdown panel.
 
-    top_indices = np.argsort(weights)[::-1][:MAX_QUERY_KEYWORDS]
+    Replaces the old TF-IDF weight approach so phrases like
+    "heartfelt gratitude" surface as a unit rather than as two
+    separate low-scoring stems.
+    """
+    phrases = _rake_phrases(query, MAX_QUERY_KEYWORDS)
+
+    # Fallback: if the query is too short for RAKE (< 2 words per phrase),
+    # RAKE returns nothing. In that case, treat each non-stopword token as
+    # a single-word keyword with a flat score of 1.0.
+    if not phrases:
+        tokens = [t for t in _normalize(query).split() if t not in STOPWORDS and len(t) > 2]
+        phrases = [(tok, 1.0) for tok in tokens[:MAX_QUERY_KEYWORDS]]
+
     keywords = []
-    for idx in top_indices:
-        if weights[idx] <= 0:
-            break
-        term = feature_names[idx]
-        if term in term_category_map:
-            category = term_category_map[term]
-        elif " " in term:
-            category = "meaning"   # unseen bigrams are almost always meaning phrases
-        else:
-            category = "text"
+    for phrase, score in phrases:
+        # Category: check each word stem in the phrase against term_category_map
+        category = "text"
+        for word in phrase.split():
+            stem = _stemmer.stem(word.lower())
+            if stem in term_category_map:
+                category = term_category_map[stem]
+                break
+
         keywords.append({
-            "keyword":  term,
+            "keyword":  phrase,
             "category": category,
-            "score":    round(float(weights[idx]) * 10, 2),
+            "score":    round(float(score), 2),
         })
+
     return keywords
 
 
 def _extract_matched_keywords(
     flower: dict,
-    query_tfidf,
-    flower_tfidf_row,
-    vectorizer,
+    query: str,
 ) -> list[dict]:
     """
-    Hadamard (element-wise) product of the query TF-IDF vector and a flower's
-    TF-IDF row. Non-zero entries are stems present in both -> lexical matches.
-    Score = joint relevance weight.
-    """
-    feature_names = vectorizer.get_feature_names_out()
-    q_weights = query_tfidf.toarray()[0]
-    f_weights = flower_tfidf_row.toarray()[0]
+    Find keyphrases that appear in BOTH the query and the flower's text fields.
 
-    joint = q_weights * f_weights
-    top_indices = np.argsort(joint)[::-1][:MAX_MATCHED_CHIPS]
+    Strategy:
+    1. Run RAKE on the flower's combined prose (meanings + occasions).
+    2. Tokenize and stem both the query and each flower phrase.
+    3. Keep flower phrases whose stems overlap with at least one query stem.
+    4. Score by RAKE phrase score so more "meaningful" phrases rank higher.
+
+    This replaces the old Hadamard TF-IDF product approach, giving human-
+    readable multi-word phrases ("heartfelt gratitude") instead of stems
+    ("heartfelt gratit").
+    """
+    # Build the flower's prose blob from the most semantically rich fields
+    flower_prose = " ".join([
+        *flower["meanings"],
+        *flower["occasions"],
+        flower["name"],
+        *flower["colors"],
+        *flower["maintenance"],
+    ])
+
+    flower_phrases = _rake_phrases(flower_prose, MAX_MATCHED_CHIPS * 3)  # over-fetch, then filter
+
+    query_stems = set(_tokenize_and_stem(_normalize(query)))
 
     matched = []
-    for idx in top_indices:
-        if joint[idx] <= 0:
+    seen_phrases: set[str] = set()
+
+    for phrase, score in flower_phrases:
+        if len(matched) >= MAX_MATCHED_CHIPS:
             break
-        term = feature_names[idx]
+
+        phrase_stems = set(_tokenize_and_stem(phrase))
+        if not phrase_stems & query_stems:
+            continue  # no overlap with query -> skip
+
+        if phrase in seen_phrases:
+            continue
+        seen_phrases.add(phrase)
+
         matched.append({
-            "keyword":  term,
-            "category": _categorize_term(term, flower),
-            "score":    round(float(joint[idx]) * 10, 2),
+            "keyword":  phrase,
+            "category": _categorize_term(phrase, flower),
+            "score":    round(float(score), 2),
         })
+
     return matched
 
 
@@ -456,7 +525,7 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
 
     flowers, vectorizer, svd, tfidf_matrix, lsa_matrix, term_category_map = _load_model()
 
-    # Transform query into TF-IDF space 
+    # Transform query into TF-IDF space (still used for retrieval ranking)
     query_tfidf = vectorizer.transform([_normalize(query)])   # sparse (1, n_terms)
     query_stems = set(_tokenize_and_stem(_normalize(query)))
 
@@ -467,7 +536,8 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     # Cosine similarity against all flowers (= dot product after l2 normalisation)
     similarities = cosine_similarity(query_lsa, lsa_matrix)[0]  # (n_flowers,)
 
-    keywords_used = _extract_query_keywords(query_tfidf, vectorizer, term_category_map)
+    # RAKE-based query breakdown (replaces TF-IDF weight extraction)
+    keywords_used = _extract_query_keywords(query, term_category_map)
 
     top_indices = np.argsort(similarities)[::-1]
     top_score   = float(similarities[top_indices[0]]) if len(top_indices) else 1.0
@@ -480,16 +550,14 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
             break
 
         flower  = flowers[idx]
-        matched = _extract_matched_keywords(
-            flower, query_tfidf, tfidf_matrix[idx], vectorizer
-        )
-        
 
-        # TODO": Do we like this: Normalise so the top result = 100, rest are relative to it.
+        # RAKE-based matched keywords (replaces Hadamard TF-IDF product)
+        matched = _extract_matched_keywords(flower, query)
+
+        # TODO: Do we like this: Normalise so the top result = 100, rest are relative to it.
         normalised_score = round(
             (float(similarities[idx]) / top_score) * 100, 2
         ) if top_score > 0 else 0.0
-
 
         suggestions.append({
             "name":             flower["name"],
