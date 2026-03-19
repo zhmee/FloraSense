@@ -107,16 +107,16 @@
 .eyebrow {
   margin-bottom: 12px;
   font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: clamp(0.8rem, 1.5vw, 1.5rem);
+  letter-spacing: 0.12em;
   color: var(--accent-deep);
 }
 
 .hero h1 {
   max-width: none;
-  font-size: clamp(3.6rem, 10vw, 7.8rem);
+  font-size: clamp(2.6rem, 8vw, 6.8rem);
   line-height: 0.9;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.015em;
   font-weight: 700;
 }
 
@@ -494,6 +494,10 @@
 
 .detail-grid p {
   line-height: 1.6;
+}
+
+.detail-occasions {
+  grid-column: 1 / -1;
 }
 
 .match-list {

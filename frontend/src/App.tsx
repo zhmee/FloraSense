@@ -300,22 +300,21 @@ function App(): JSX.Element {
 
       <section className="hero">
         <div className="hero-copy-block">
-          <p className="eyebrow">FloraSense</p>
+          <p className="eyebrow">Designed by feeling, defined by flowers, </p>
           <h1>FloraSense</h1>
           <p className="hero-copy">
-            Describe a mood, color, level of care, or meaning, and get a short ranked set of flower
+            Describe a mood, color, level of care, or meaning, and receive a short ranked set of flower
             suggestions that feels more curated than filtered.
           </p>
 
           <form className="search-panel" onSubmit={handleSubmit}>
-            <label className="search-label" htmlFor="flower-query">Describe the flower you want</label>
             <div className="search-row">
               <img src={SearchIcon} alt="" aria-hidden="true" />
               <input
                 id="flower-query"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Try: low maintenance white flowers for love"
+                placeholder="e.g. a low maintenance white flower for love"
                 autoComplete="off"
               />
               <button type="submit" disabled={loading}>
@@ -340,9 +339,9 @@ function App(): JSX.Element {
 
         <div className="hero-side">
           <div className="hero-note">
-            <span>How it reads the query</span>
+            <span>How it works:</span>
             <p>
-              The matcher looks for flower names, colors, meanings, maintenance levels, and plant
+              The system looks for flower names, colors, meanings, maintenance levels, and plant
               types, then weights the strongest overlaps.
             </p>
           </div>
@@ -352,11 +351,11 @@ function App(): JSX.Element {
       <section className="page-body">
         <aside className="query-rail">
           <div className="rail-heading">
-            <p>Query breakdown</p>
+            <p>Query Breakdown</p>
             <span>{results.keywords_used.length}</span>
           </div>
           <p className="rail-copy">
-            Parsed terms from the current request. These animate in after the ranking finishes.
+            Parsed terms from the current request:
           </p>
 
           {loading ? (
@@ -375,7 +374,7 @@ function App(): JSX.Element {
             </div>
           ) : (
             <div className="rail-empty">
-              {error || 'Run a search to see which words the matching logic used.'}
+              {error || 'Run a search to see which words the matching logic used!'}
             </div>
           )}
         </aside>
@@ -383,8 +382,7 @@ function App(): JSX.Element {
         <div className="results-column">
           <header className="results-header">
             <div>
-              <p className="section-kicker">Ranked flowers</p>
-              <h2>Best matches for this request</h2>
+              <h2>Best matches for your request</h2>
             </div>
             <div className="results-meta">
               <span>{results.suggestions.length}/5 shown</span>
@@ -457,6 +455,12 @@ function App(): JSX.Element {
                         <span className="detail-label">Meaning</span>
                         <p>{formatLabel(suggestion.meanings)}</p>
                       </div>
+                      {suggestion.occasions && (
+                        <div>
+                          <span className="detail-label">Occasions</span>
+                          <p>{formatLabel(suggestion.occasions)}</p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="match-list">

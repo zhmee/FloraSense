@@ -5,4 +5,7 @@ SQLAlchemy==2.0.36
 Werkzeug==2.2.2
 gunicorn==25.0.3
 python-dotenv
+scikit-learn>=1.4
+numpy>=1.26
+nltk==3.9.1
 git+https://github.com/MrPeterss/infosci-spark-client.git
