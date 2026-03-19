@@ -337,7 +337,6 @@ def _load_model() -> tuple:
 
     return flowers, vectorizer, svd, tfidf_matrix, lsa_matrix, term_category_map
 
-
 # -------------------------------------------------------
 # Keyword extraction helpers  (for frontend)
 # -------------------------------------------------------

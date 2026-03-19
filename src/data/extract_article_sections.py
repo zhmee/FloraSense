@@ -21,12 +21,6 @@ meaning_patterns = [
     re.compile(r".*? Flower meaning", re.IGNORECASE)
 ]
 
-symbolism_patterns = [
-    re.compile(r"Symbolism of the .*? Flower", re.IGNORECASE),
-    re.compile(r"Symbolism of the .*? Flowers", re.IGNORECASE),
-    re.compile(r"\.*? Flower Symbolism", re.IGNORECASE)
-]
-
 occasions_patterns = [
     re.compile(r"Special Occasions for .*? Flower", re.IGNORECASE),
     re.compile(r"Special Occasions for .*? Flowers", re.IGNORECASE),
@@ -59,11 +53,11 @@ def extract_section(text, patterns):
 
     section_lines = []
     for line in lines[start_idx:]:
-        # Only take information BETWEEN headings
-        if re.match(r"^[A-Z][A-Za-z\s]*$", line.strip()) or re.match(r"^[A-Z].*Flower", line.strip()):
+        # Stop exactly when we hit the Etymological Meaning heading
+        if re.search(r"Etymological Meaning", line, re.IGNORECASE):
             break
         section_lines.append(line)
-    
+
     section_text = " ".join([l.strip() for l in section_lines if l.strip()])
     return preprocess_text(section_text)
 
@@ -83,14 +77,13 @@ for filename in txt_files:
         text = f.read()
 
         meaning_text = extract_section(text, meaning_patterns)
-        symbolism_text = extract_section(text, symbolism_patterns)
         occasions_text = extract_section(text, occasions_patterns)
 
-        combined_text = " ".join(filter(None, [meaning_text, symbolism_text]))
+        combined_text = " ".join(filter(None, [meaning_text]))
 
         if combined_text or occasions_text:
             all_flowers[flower_name] = {
-                "Meaning & Symbolism": combined_text,
+                "Meaning": combined_text,
                 "Special Occasions": occasions_text
             }
 
@@ -98,8 +91,8 @@ for filename in txt_files:
 output_path = os.path.join(folder_path, "flowers_meaning_occasions.csv")
 with open(output_path, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
-    writer.writerow(["Flower", "Meaning & Symbolism", "Special Occasions"])
+    writer.writerow(["Flower", "Meaning", "Special Occasions"])
     for name, sections in sorted(all_flowers.items()):
-        writer.writerow([name, sections["Meaning & Symbolism"], sections["Special Occasions"]])
+        writer.writerow([name, sections["Meaning"], sections["Special Occasions"]])
 
 print(f"Done! Saved {len(all_flowers)} flowers with sections to {output_path}")
