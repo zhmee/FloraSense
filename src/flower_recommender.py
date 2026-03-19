@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 # the flower spreadsheet. because everything's on one csv...
-DATA_FILE = Path(__file__).resolve().parent / "data" / "main.csv"
+DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
 # lowercase only and punctuation gone lets go
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 # words that show up in queries just to contribute absolutely nothing
