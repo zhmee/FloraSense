@@ -12,8 +12,12 @@ TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 # words that show up in queries just to contribute absolutely nothing
 STOPWORDS = {
     "a", "an", "and", "are", "as", "be", "best", "by", "for", "from", "i",
-    "in", "is", "it", "like", "me", "my", "of", "or", "show", "something",
-    "that", "the", "to", "want", "with",
+    "in", "is", "it", "like", "me", "my", "myself", "of", "or", "our",
+    "ours", "show", "something", "that", "the", "to", "want", "we", "with",
+    # verb connectors that appear in queries as structure words, not content
+    "mean", "means", "meaning", "meanings", "called", "known", "named",
+    # generic flower prose filler
+    "flower", "flowers", "bloom", "blooms", "plant", "plants",
 }
 
 # hand-tuned weights for each signal type
@@ -113,7 +117,7 @@ def load_flower_catalog():
     with DATA_FILE.open(encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            common_name = row.get("common_name", "").strip()
+            common_name = row.get("name", "").strip()
             scientific_name = row.get("scientific_name", "").strip()
             display_name = common_name or scientific_name or "Unknown flower"
             flower_key = normalize_text(common_name or scientific_name)

@@ -53,6 +53,10 @@ STOPWORDS = {
     "a", "an", "and", "are", "as", "be", "best", "by", "for", "from", "i",
     "in", "is", "it", "like", "me", "my", "myself", "of", "or", "our",
     "ours", "show", "something", "that", "the", "to", "want", "we", "with",
+    # verb connectors that appear in queries as structure words, not content
+    "mean", "means", "meaning", "meanings", "called", "known", "named",
+    # generic flower prose filler
+    "flower", "flowers", "bloom", "blooms", "plant", "plants",
 }
 
 MAX_MATCHED_CHIPS  = 8   # keyword chips shown per flower card

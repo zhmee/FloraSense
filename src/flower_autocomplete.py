@@ -35,7 +35,7 @@ from flower_recommender_prototype3 import (
 )
 
 # keep the autocomplete responses short so the dropdown stays readable
-MAX_AUTOCOMPLETE_SUGGESTIONS = 6
+MAX_AUTOCOMPLETE_SUGGESTIONS = 3
 
 # these are the prompt shapes we want suggestions to look like
 QUERY_PREFIX_TEMPLATES = ("flowers for ", "a flower for ")

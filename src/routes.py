@@ -7,10 +7,16 @@ import json
 import os
 from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
-#from flower_recommender import recommend_flowers
-#from flower_recommender_prototype import recommend_flowers
-from flower_recommender_prototype3 import recommend_flowers
-from flower_autocomplete import autocomplete_queries
+
+# ------ TODO: Cleanup & Delete old versions, eventually ------
+#from flower_recommender import recommend_flowers               # Base Non-SVD Kaustav Version
+#from flower_recommender_prototype import recommend_flowers     # SVD v1 - Elise
+#from flower_recommender_prototype2 import recommend_flowers    # v1 w/ RAKE - Michelle (Need to change requirements.txt)
+
+from flower_recommender_prototype3 import recommend_flowers     # SVD 3 - Kaustav (*FOR P03 DEPLOYMENT*)
+#from flower_recommender_v3 import recommend_flowers            # SVD v3 - Elise (playtesting)
+
+from flower_autocomplete import autocomplete_queries            # Autocomplete
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False

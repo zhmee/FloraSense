@@ -52,8 +52,9 @@ const DECORATIVE_FLOWERS: DecorativeFlower[] = [
   { top: '87%', right: '20%', size: 72, depth: 0.85, hue: 'olive', image: FlowerOlive },
 ]
 
-function formatLabel(values: string[]): string {
-  return values.length > 0 ? values.join(', ') : 'Not listed'
+function formatLabel(values: string[] | undefined): string {
+  if (!values || values.length === 0) return 'Not listed'
+  return values.join(', ')
 }
 
 function formatFullText(values: string[]): string {
@@ -593,7 +594,7 @@ function App(): JSX.Element {
         <div className="results-column">
           <header className="results-header">
             <div className="results-title-block">
-              <h2>Best matches for...</h2>
+              <h2>Best Matches for Your Query: </h2>
               {results.query && !loading && <p>“{results.query}”</p>}
             </div>
             <div className="results-meta">
