@@ -9,7 +9,7 @@ from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
 #from flower_recommender import recommend_flowers
 #from flower_recommender_prototype import recommend_flowers
-from flower_recommender_prototype2 import recommend_flowers
+
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
