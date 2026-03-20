@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useRef, useState } from 'react'
 import { animate, createScope, stagger } from 'animejs'
 import type { Target } from 'animejs'
 import './App.css'
@@ -7,7 +7,7 @@ import FlowerCoral from './assets/flower-coral.svg'
 import FlowerGold from './assets/flower-gold.svg'
 import FlowerOlive from './assets/flower-olive.svg'
 import FlowerRose from './assets/flower-rose.svg'
-import { RecommendationResponse } from './types'
+import { AutocompleteResponse, RecommendationResponse } from './types'
 
 const EMPTY_RESULTS: RecommendationResponse = {
   query: '',
@@ -56,6 +56,61 @@ function formatLabel(values: string[]): string {
   return values.length > 0 ? values.join(', ') : 'Not listed'
 }
 
+function formatFullText(values: string[]): string {
+  if (values.length === 0) return 'Not listed'
+  const combined = values.join(' ').replace(/\s+/g, ' ').trim()
+  return combined || 'Not listed'
+}
+
+function formatLongText(values: string[], maxSentences: number = 2): string {
+  if (values.length === 0) return 'Not listed'
+
+  const combined = values.join(' ').replace(/\s+/g, ' ').trim()
+  if (!combined) return 'Not listed'
+
+  const sentences = combined.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [combined]
+  return sentences
+    .slice(0, maxSentences)
+    .map((sentence) => sentence.trim())
+    .join(' ')
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getHighlightTerms(values: string[]): string[] {
+  const deduped = Array.from(
+    new Set(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length >= 2),
+    ),
+  )
+
+  return deduped.sort((left, right) => right.length - left.length)
+}
+
+function renderHighlightedText(text: string, highlightTerms: string[]): ReactNode {
+  if (!text || text === 'Not listed' || highlightTerms.length === 0) {
+    return text
+  }
+
+  const pattern = new RegExp(`(${highlightTerms.map(escapeRegExp).join('|')})`, 'gi')
+  const parts = text.split(pattern)
+
+  return parts.map((part, index) => {
+    const isMatch = highlightTerms.some((term) => term === part.toLowerCase())
+    return isMatch ? (
+      <mark key={`${part}-${index}`} className="detail-highlight">
+        {part}
+      </mark>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    )
+  })
+}
+
 function getMatchStrength(score: number, bestScore: number): number {
   if (bestScore <= 0) return 0
   return Math.max(Math.min(score / bestScore, 1), 0.12)
@@ -64,11 +119,20 @@ function getMatchStrength(score: number, bestScore: number): number {
 function App(): JSX.Element {
   const [query, setQuery] = useState<string>('')
   const [results, setResults] = useState<RecommendationResponse>(EMPTY_RESULTS)
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([])
+  const [autocompleteOpen, setAutocompleteOpen] = useState<boolean>(false)
+  const [autocompleteLoading, setAutocompleteLoading] = useState<boolean>(false)
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(false)
+  const [activeAutocompleteIndex, setActiveAutocompleteIndex] = useState<number>(-1)
+  const [expandedMeaningCards, setExpandedMeaningCards] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
+  const queryInputRef = useRef<HTMLInputElement | null>(null)
   const appRef = useRef<HTMLElement | null>(null)
   const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
   const loadingAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
+  const autocompleteRequestRef = useRef<number>(0)
+  const skipNextAutocompleteRef = useRef<boolean>(false)
 
   const topScore = results.suggestions[0]?.score ?? 0
 
@@ -243,9 +307,75 @@ function App(): JSX.Element {
     }
   }, [results, loading])
 
+  useEffect(() => {
+    if (!autocompleteEnabled) {
+      setAutocompleteOpen(false)
+      setAutocompleteLoading(false)
+      return
+    }
+
+    if (skipNextAutocompleteRef.current) {
+      skipNextAutocompleteRef.current = false
+      return
+    }
+
+    const trimmedQuery = query.trim()
+    if (trimmedQuery.length < 2) {
+      setAutocompleteSuggestions([])
+      setAutocompleteOpen(false)
+      setAutocompleteLoading(false)
+      setActiveAutocompleteIndex(-1)
+      return
+    }
+
+    const requestId = autocompleteRequestRef.current + 1
+    autocompleteRequestRef.current = requestId
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      setAutocompleteLoading(true)
+      try {
+        const response = await fetch(`/api/autocomplete?q=${encodeURIComponent(trimmedQuery)}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`Autocomplete failed with status ${response.status}`)
+        }
+
+        const data: AutocompleteResponse = await response.json()
+        if (autocompleteRequestRef.current !== requestId) return
+
+        setAutocompleteSuggestions(data.suggestions)
+        setAutocompleteOpen(data.suggestions.length > 0)
+        setActiveAutocompleteIndex(-1)
+      } catch (requestError) {
+        if ((requestError as Error).name === 'AbortError') return
+        if (autocompleteRequestRef.current !== requestId) return
+        setAutocompleteSuggestions([])
+        setAutocompleteOpen(false)
+      } finally {
+        if (autocompleteRequestRef.current === requestId) {
+          setAutocompleteLoading(false)
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
+  }, [query])
+
   const runSearch = async (nextQuery: string): Promise<void> => {
     const trimmedQuery = nextQuery.trim()
+    skipNextAutocompleteRef.current = true
+    setAutocompleteEnabled(false)
     setQuery(nextQuery)
+    setAutocompleteSuggestions([])
+    setAutocompleteOpen(false)
+    setAutocompleteLoading(false)
+    setActiveAutocompleteIndex(-1)
+    queryInputRef.current?.blur()
+    setExpandedMeaningCards({})
 
     if (!trimmedQuery) {
       setResults(EMPTY_RESULTS)
@@ -269,6 +399,46 @@ function App(): JSX.Element {
       setError(requestError instanceof Error ? requestError.message : 'Search failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const applyAutocompleteSuggestion = async (suggestion: string): Promise<void> => {
+    await runSearch(suggestion)
+  }
+
+  const handleQueryChange = (value: string): void => {
+    setQuery(value)
+    if (!value.trim()) {
+      setAutocompleteSuggestions([])
+      setAutocompleteOpen(false)
+      setActiveAutocompleteIndex(-1)
+    }
+  }
+
+  const handleQueryKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (!autocompleteOpen || autocompleteSuggestions.length === 0) return
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveAutocompleteIndex((currentIndex) => Math.min(currentIndex + 1, autocompleteSuggestions.length - 1))
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveAutocompleteIndex((currentIndex) => Math.max(currentIndex - 1, 0))
+      return
+    }
+
+    if (event.key === 'Escape') {
+      setAutocompleteOpen(false)
+      setActiveAutocompleteIndex(-1)
+      return
+    }
+
+    if (event.key === 'Enter' && activeAutocompleteIndex >= 0) {
+      event.preventDefault()
+      void applyAutocompleteSuggestion(autocompleteSuggestions[activeAutocompleteIndex])
     }
   }
 
@@ -311,11 +481,25 @@ function App(): JSX.Element {
             <div className="search-row">
               <img src={SearchIcon} alt="" aria-hidden="true" />
               <input
+                ref={queryInputRef}
                 id="flower-query"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
+                onKeyDown={handleQueryKeyDown}
+                onFocus={() => {
+                  setAutocompleteEnabled(true)
+                  if (autocompleteSuggestions.length > 0) {
+                    setAutocompleteOpen(true)
+                  }
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => setAutocompleteOpen(false), 120)
+                }}
                 placeholder="e.g. a low maintenance white flower for love"
                 autoComplete="off"
+                aria-autocomplete="list"
+                aria-expanded={autocompleteOpen}
+                aria-controls="flower-autocomplete-list"
               />
               <button type="submit" disabled={loading}>
                 {loading ? 'Ranking...' : 'Search'}
@@ -323,17 +507,44 @@ function App(): JSX.Element {
             </div>
           </form>
 
-          <div className="sample-row">
-            {SAMPLE_QUERIES.map((sample) => (
-              <button
-                key={sample}
-                type="button"
-                className="sample-chip"
-                onClick={() => void runSearch(sample)}
-              >
-                {sample}
-              </button>
-            ))}
+          <div
+            className={`sample-row ${(autocompleteOpen || autocompleteLoading) ? 'is-autocomplete' : ''}`}
+            id="flower-autocomplete-list"
+            role={(autocompleteOpen || autocompleteLoading) ? 'listbox' : undefined}
+          >
+            <div className={`sample-row-content ${(autocompleteOpen || autocompleteLoading) ? 'is-hidden' : ''}`}>
+              {SAMPLE_QUERIES.map((sample) => (
+                <button
+                  key={sample}
+                  type="button"
+                  className="sample-chip"
+                  onClick={() => void runSearch(sample)}
+                >
+                  {sample}
+                </button>
+              ))}
+            </div>
+            <div className={`autocomplete-content ${(autocompleteOpen || autocompleteLoading) ? 'is-open' : ''}`}>
+              <>
+                {autocompleteSuggestions.map((suggestion, index) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeAutocompleteIndex}
+                    className={`autocomplete-option ${index === activeAutocompleteIndex ? 'is-active' : ''}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => void applyAutocompleteSuggestion(suggestion)}
+                  >
+                    <span>{suggestion}</span>
+                    <small>SVD suggestion</small>
+                  </button>
+                ))}
+                {autocompleteLoading && autocompleteSuggestions.length === 0 && (
+                  <div className="autocomplete-empty">Loading suggestions...</div>
+                )}
+              </>
+            </div>
           </div>
         </div>
 
@@ -341,8 +552,8 @@ function App(): JSX.Element {
           <div className="hero-note">
             <span>How it works:</span>
             <p>
-              The system looks for flower names, colors, meanings, maintenance levels, and plant
-              types, then weights the strongest overlaps.
+              The recommender projects flowers and queries into an SVD-based retrieval space built
+              from meanings, attributes, and flower descriptions, then ranks the closest matches.
             </p>
           </div>
         </div>
@@ -355,12 +566,12 @@ function App(): JSX.Element {
             <span>{results.keywords_used.length}</span>
           </div>
           <p className="rail-copy">
-            Parsed terms from the current request:
+            Highest-weight semantic terms from the current request:
           </p>
 
           {loading ? (
             <div className="rail-empty">
-              Parsing the query and mapping it to flower tags.
+              Projecting the query into the semantic flower space.
             </div>
           ) : results.keywords_used.length > 0 ? (
             <div className="keyword-grid">
@@ -374,19 +585,19 @@ function App(): JSX.Element {
             </div>
           ) : (
             <div className="rail-empty">
-              {error || 'Run a search to see which words the matching logic used!'}
+              {error || 'Run a search to see which semantic terms influenced the ranking.'}
             </div>
           )}
         </aside>
 
         <div className="results-column">
           <header className="results-header">
-            <div>
-              <h2>Best matches for your request</h2>
+            <div className="results-title-block">
+              <h2>Best matches for...</h2>
+              {results.query && !loading && <p>“{results.query}”</p>}
             </div>
             <div className="results-meta">
               <span>{results.suggestions.length}/5 shown</span>
-              {results.query && !loading && <p>For “{results.query}”</p>}
             </div>
           </header>
 
@@ -399,17 +610,23 @@ function App(): JSX.Element {
                 <span className="loading-dot" />
               </div>
               <strong>Ranking flowers</strong>
-              <p>Parsing keywords, weighting matches, and sorting the shortlist.</p>
+              <p>Encoding the query, searching the latent flower space, and sorting the shortlist.</p>
             </div>
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
               {results.suggestions.map((suggestion, index) => {
                 const strength = getMatchStrength(suggestion.score, topScore)
                 const strengthLabel = Math.round(strength * 100)
+                const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
+                const fullMeaningText = formatFullText(suggestion.meanings)
+                const fullOccasionText = formatLongText(suggestion.occasions)
+                const meaningIsExpandable = fullMeaningText !== 'Not listed' && fullMeaningText.length > 220
+                const isMeaningExpanded = Boolean(expandedMeaningCards[suggestionKey])
+                const highlightTerms = getHighlightTerms(suggestion.matched_keywords.map((match) => match.keyword))
 
                 return (
                   <article
-                    key={`${suggestion.name}-${suggestion.scientific_name}`}
+                    key={suggestionKey}
                     className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
                   >
                     {index === 0 && <span className="top-pick-banner">Top recommendation</span>}
@@ -453,12 +670,30 @@ function App(): JSX.Element {
                       </div>
                       <div>
                         <span className="detail-label">Meaning</span>
-                        <p>{formatLabel(suggestion.meanings)}</p>
+                        <div className="detail-copy-group">
+                          <p className={`detail-copy ${meaningIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''}`}>
+                            {renderHighlightedText(fullMeaningText, highlightTerms)}
+                          </p>
+                          {meaningIsExpandable && (
+                            <button
+                              type="button"
+                              className="detail-toggle"
+                              onClick={() =>
+                                setExpandedMeaningCards((currentState) => ({
+                                  ...currentState,
+                                  [suggestionKey]: !currentState[suggestionKey],
+                                }))
+                              }
+                            >
+                              {isMeaningExpanded ? 'show less' : 'show full meaning'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {suggestion.occasions && (
                         <div>
                           <span className="detail-label">Occasions</span>
-                          <p>{formatLabel(suggestion.occasions)}</p>
+                          <p>{renderHighlightedText(fullOccasionText, highlightTerms)}</p>
                         </div>
                       )}
                     </div>
