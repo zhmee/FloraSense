@@ -9,7 +9,8 @@ from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
 #from flower_recommender import recommend_flowers
 #from flower_recommender_prototype import recommend_flowers
-
+from flower_recommender_prototype3 import recommend_flowers
+from flower_autocomplete import autocomplete_queries
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
@@ -57,6 +58,11 @@ def register_routes(app):
     def recommendations():
         query = request.args.get("q", "")
         return jsonify(recommend_flowers(query))
+
+    @app.route("/api/autocomplete")
+    def autocomplete():
+        query = request.args.get("q", "")
+        return jsonify(autocomplete_queries(query))
 
     if USE_LLM:
         from llm_routes import register_chat_route

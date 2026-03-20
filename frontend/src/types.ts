@@ -27,3 +27,8 @@ export interface RecommendationResponse {
   keywords_used: KeywordUsed[]
   suggestions: FlowerSuggestion[]
 }
+
+export interface AutocompleteResponse {
+  query: string
+  suggestions: string[]
+}
