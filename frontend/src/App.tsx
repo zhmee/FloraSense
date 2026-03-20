@@ -471,7 +471,7 @@ function App(): JSX.Element {
 
       <section className="hero">
         <div className="hero-copy-block">
-          <p className="eyebrow">Designed by feeling, defined by flowers, </p>
+          <p className="eyebrow">Describe a feeling. Discover a flower.</p>
           <h1>FloraSense</h1>
           <p className="hero-copy">
             Describe a mood, color, level of care, or meaning, and receive a short ranked set of flower

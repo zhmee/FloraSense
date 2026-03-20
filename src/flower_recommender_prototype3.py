@@ -34,6 +34,20 @@ MAX_SVD_COMPONENTS = 96
 MAX_QUERY_KEYWORDS = 10
 MAX_MATCHED_KEYWORDS = 8
 MAX_HIGHLIGHTS = 3
+GENERIC_EXPLANATION_TOKENS = {
+    "express",
+    "expresses",
+    "mean",
+    "means",
+    "meaning",
+    "meanings",
+    "represent",
+    "represents",
+    "symbol",
+    "symbols",
+    "symbolize",
+    "symbolizes",
+}
 
 # token pattern because we need words for matching/displaying
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
@@ -435,7 +449,11 @@ def _is_generic_flower_term(term: str) -> bool:
     wow, we looking for flowers... how is "flower" helpful man
     """
     tokens = set(_tokenize(term))
-    return bool(tokens) and ("flower" in tokens or "flowers" in tokens)
+    return bool(tokens) and (
+        "flower" in tokens
+        or "flowers" in tokens
+        or tokens <= GENERIC_EXPLANATION_TOKENS
+    )
 
 
 def _is_redundant_keyword(term: str, selected_terms: list[str]) -> bool:
