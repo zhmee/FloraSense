@@ -1,4 +1,4 @@
-common_name,scientific_name,color,planttype,maintenance
+name,scientific_name,color,planttype,maintenance
 Yarrow,achillea,cream,Perennials,low
 Yarrow,achillea,orange,Perennials,low
 Yarrow,achillea,pink,Perennials,low
@@ -22,12 +22,12 @@ wolf's bane,aconitum,yellow,Perennials,medium
 bugle,ajuga,blue,"Annuals, Perennials",low
 bugle,ajuga,purple,"Annuals, Perennials",low
 bugle,ajuga,white,"Annuals, Perennials",low
-hollyhock,alcea,black,"Annuals, Perennials",hard
-hollyhock,alcea,pink,"Annuals, Perennials",hard
-hollyhock,alcea,purple,"Annuals, Perennials",hard
-hollyhock,alcea,red,"Annuals, Perennials",hard
-hollyhock,alcea,white,"Annuals, Perennials",hard
-hollyhock,alcea,yellow,"Annuals, Perennials",hard
+hollyhock,alcea,black,Perennials,hard
+hollyhock,alcea,pink,Perennials,hard
+hollyhock,alcea,purple,Perennials,hard
+hollyhock,alcea,red,Perennials,hard
+hollyhock,alcea,white,Perennials,hard
+hollyhock,alcea,yellow,Perennials,hard
 wild onion,allium,blue,"Bulbs, Perennials",low
 wild onion,allium,pink,"Bulbs, Perennials",low
 wild onion,allium,purple,"Bulbs, Perennials",low
@@ -52,13 +52,13 @@ Tailflower,anthurium,purple,Perennials,low
 Tailflower,anthurium,red,Perennials,low
 Tailflower,anthurium,white,Perennials,low
 Tailflower,anthurium,yellow,Perennials,low
-Snapdragon,antirrhinum,green,"Annuals, Perennials",low
-Snapdragon,antirrhinum,orange,"Annuals, Perennials",low
-Snapdragon,antirrhinum,pink,"Annuals, Perennials",low
-Snapdragon,antirrhinum,purple,"Annuals, Perennials",low
-Snapdragon,antirrhinum,red,"Annuals, Perennials",low
-Snapdragon,antirrhinum,white,"Annuals, Perennials",low
-Snapdragon,antirrhinum,yellow,"Annuals, Perennials",low
+Snapdragon,antirrhinum,green,Perennials,low
+Snapdragon,antirrhinum,orange,Perennials,low
+Snapdragon,antirrhinum,pink,Perennials,low
+Snapdragon,antirrhinum,purple,Perennials,low
+Snapdragon,antirrhinum,red,Perennials,low
+Snapdragon,antirrhinum,white,Perennials,low
+Snapdragon,antirrhinum,yellow,Perennials,low
 European columbine,aquilegia,blue,Perennials,low
 European columbine,aquilegia,pink,Perennials,low
 European columbine,aquilegia,purple,Perennials,low
@@ -92,11 +92,11 @@ masterwort,astrantia,white,Perennials,medium
 ,baptisia,blue,Perennials,low
 ,baptisia,white,Perennials,low
 ,baptisia,yellow,Perennials,low
-,begonia,orange,"Annuals, Bulbs, Perennials",low
-,begonia,pink,"Annuals, Bulbs, Perennials",low
-,begonia,red,"Annuals, Bulbs, Perennials",low
-,begonia,white,"Annuals, Bulbs, Perennials",low
-,begonia,yellow,"Annuals, Bulbs, Perennials",low
+,begonia,orange,Perennials,low
+,begonia,pink,Perennials,low
+,begonia,red,Perennials,low
+,begonia,white,Perennials,low
+,begonia,yellow,Perennials,low
 ,bellis,pink,Perennials,low
 ,bellis,purple,Perennials,low
 ,bellis,red,Perennials,low
@@ -106,14 +106,14 @@ masterwort,astrantia,white,Perennials,medium
 ,bergenia,purple,Perennials,low
 ,bergenia,red,Perennials,low
 ,bergenia,white,Perennials,low
-,borago,blue,"Annuals, Perennials",low
-,borago,pink,"Annuals, Perennials",low
-,bougainvillea,orange,"Climbers, Shrubs, Trees",low
-,bougainvillea,pink,"Climbers, Shrubs, Trees",low
-,bougainvillea,purple,"Climbers, Shrubs, Trees",low
-,bougainvillea,red,"Climbers, Shrubs, Trees",low
-,bougainvillea,white,"Climbers, Shrubs, Trees",low
-,bougainvillea,yellow,"Climbers, Shrubs, Trees",low
+,borago,blue,Annual,low
+,borago,pink,Annuals,low
+,bougainvillea,orange,Annuals,low
+,bougainvillea,pink,Annuals,low
+,bougainvillea,purple,Annuals,low
+,bougainvillea,red,Annuals,low
+,bougainvillea,white,Annuals,low
+,bougainvillea,yellow,Annuals,low
 ,bouvardia,orange,"Herbs, Shrubs",low
 ,bouvardia,pink,"Herbs, Shrubs",low
 ,bouvardia,red,"Herbs, Shrubs",low
