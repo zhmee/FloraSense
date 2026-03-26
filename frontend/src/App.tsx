@@ -7,15 +7,17 @@ import FlowerCoral from './assets/flower-coral.svg'
 import FlowerGold from './assets/flower-gold.svg'
 import FlowerOlive from './assets/flower-olive.svg'
 import FlowerRose from './assets/flower-rose.svg'
-import { AutocompleteResponse, RecommendationResponse } from './types'
+import { AutocompleteResponse, KeywordUsed, RecommendationResponse } from './types'
 
 const EMPTY_RESULTS: RecommendationResponse = {
   query: '',
   keywords_used: [],
+  query_latent_radar_chart: null,
+  query_latent_radar_axes: [],
   suggestions: [],
 }
 
-const SAMPLE_QUERIES = [
+const ANIMATED_QUERY_EXAMPLES = [
   'white flowers for gratitude',
   'low maintenance pink flowers',
   'yellow flowers that mean friendship',
@@ -76,32 +78,123 @@ function formatLongText(values: string[], maxSentences: number = 2): string {
     .join(' ')
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+interface HighlightProfile {
+  normalized: string
+  root: string
 }
 
-function getHighlightTerms(values: string[]): string[] {
+function normalizeHighlightWord(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function stemHighlightWord(value: string): string {
+  let normalized = normalizeHighlightWord(value)
+  if (normalized.length <= 4) return normalized
+
+  const suffixRules: Array<[string, string]> = [
+    ['fulness', 'ful'],
+    ['ousness', 'ous'],
+    ['ization', 'ize'],
+    ['ations', 'ate'],
+    ['ation', 'ate'],
+    ['lessly', 'less'],
+    ['ship', ''],
+    ['ment', ''],
+    ['ingly', ''],
+    ['fully', 'ful'],
+    ['iness', 'y'],
+    ['edly', ''],
+    ['able', ''],
+    ['ible', ''],
+    ['ness', ''],
+    ['less', ''],
+    ['iest', 'y'],
+    ['ier', 'y'],
+    ['ies', 'y'],
+    ['ing', ''],
+    ['er', ''],
+    ['est', ''],
+    ['ed', ''],
+    ['ly', ''],
+    ['ful', ''],
+    ['ous', ''],
+    ['ive', ''],
+    ['al', ''],
+    ['ity', ''],
+    ['s', ''],
+  ]
+
+  for (const [suffix, replacement] of suffixRules) {
+    if (!normalized.endsWith(suffix)) continue
+
+    const nextValue = normalized.slice(0, -suffix.length) + replacement
+    if (nextValue.length >= 4) {
+      normalized = nextValue
+      break
+    }
+  }
+
+  return normalized
+}
+
+function getCommonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length)
+  let index = 0
+
+  while (index < limit && left[index] === right[index]) {
+    index += 1
+  }
+
+  return index
+}
+
+function areSimilarHighlightWords(left: HighlightProfile, right: HighlightProfile): boolean {
+  if (left.normalized === right.normalized || left.root === right.root) {
+    return true
+  }
+
+  const prefixLength = getCommonPrefixLength(left.root, right.root)
+  const shorterLength = Math.min(left.root.length, right.root.length)
+  return shorterLength >= 4 && prefixLength >= Math.max(4, Math.ceil(shorterLength * 0.6))
+}
+
+function getHighlightTerms(values: string[]): HighlightProfile[] {
   const deduped = Array.from(
     new Set(
       values
-        .map((value) => value.trim().toLowerCase())
+        .flatMap((value) => value.split(/[^a-z0-9]+/i))
+        .map((value) => normalizeHighlightWord(value))
         .filter((value) => value.length >= 2),
     ),
   )
 
-  return deduped.sort((left, right) => right.length - left.length)
+  return deduped
+    .sort((left, right) => right.length - left.length)
+    .map((value) => ({
+      normalized: value,
+      root: stemHighlightWord(value),
+    }))
 }
 
-function renderHighlightedText(text: string, highlightTerms: string[]): ReactNode {
+function renderHighlightedText(text: string, highlightTerms: HighlightProfile[]): ReactNode {
   if (!text || text === 'Not listed' || highlightTerms.length === 0) {
     return text
   }
 
-  const pattern = new RegExp(`(${highlightTerms.map(escapeRegExp).join('|')})`, 'gi')
+  const pattern = /([a-z0-9]+)/gi
   const parts = text.split(pattern)
 
   return parts.map((part, index) => {
-    const isMatch = highlightTerms.some((term) => term === part.toLowerCase())
+    const normalizedPart = normalizeHighlightWord(part)
+    const isMatch =
+      normalizedPart.length >= 2 &&
+      highlightTerms.some((term) =>
+        areSimilarHighlightWords(term, {
+          normalized: normalizedPart,
+          root: stemHighlightWord(normalizedPart),
+        }),
+      )
+
     return isMatch ? (
       <mark key={`${part}-${index}`} className="detail-highlight">
         {part}
@@ -117,8 +210,52 @@ function getMatchStrength(score: number, bestScore: number): number {
   return Math.max(Math.min(score / bestScore, 1), 0.12)
 }
 
+function getQueryBreakdownKeywords(results: RecommendationResponse): KeywordUsed[] {
+  if (results.keywords_used.length > 0) {
+    return results.keywords_used
+  }
+
+  const breakdownKeywords = new Map<string, KeywordUsed & { firstSeenAt: number }>()
+  let firstSeenAt = 0
+
+  for (const suggestion of results.suggestions) {
+    for (const match of suggestion.matched_keywords) {
+      const keyword = match.keyword.trim()
+      if (!keyword) continue
+
+      const key = `${match.category}:${keyword.toLowerCase()}`
+      const current = breakdownKeywords.get(key)
+      if (!current) {
+        breakdownKeywords.set(key, {
+          keyword,
+          category: match.category,
+          score: match.score,
+          firstSeenAt,
+        })
+        firstSeenAt += 1
+        continue
+      }
+
+      current.score = Math.max(current.score, match.score)
+    }
+  }
+
+  const normalizedKeywords = Array.from(breakdownKeywords.values())
+    .sort((left, right) => right.score - left.score || left.firstSeenAt - right.firstSeenAt)
+    .map(({ firstSeenAt: _firstSeenAt, ...keyword }) => keyword)
+
+  if (normalizedKeywords.length === 0) {
+    return []
+  }
+  return normalizedKeywords.slice(0, 10)
+}
+
 function App(): JSX.Element {
   const [query, setQuery] = useState<string>('')
+  const [isQueryFocused, setIsQueryFocused] = useState<boolean>(false)
+  const [animatedQueryText, setAnimatedQueryText] = useState<string>('')
+  const [animatedQueryIndex, setAnimatedQueryIndex] = useState<number>(0)
+  const [animatedQueryDeleting, setAnimatedQueryDeleting] = useState<boolean>(false)
   const [results, setResults] = useState<RecommendationResponse>(EMPTY_RESULTS)
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([])
   const [autocompleteOpen, setAutocompleteOpen] = useState<boolean>(false)
@@ -135,7 +272,47 @@ function App(): JSX.Element {
   const autocompleteRequestRef = useRef<number>(0)
   const skipNextAutocompleteRef = useRef<boolean>(false)
 
+  const queryBreakdownKeywords = getQueryBreakdownKeywords(results)
   const topScore = results.suggestions[0]?.score ?? 0
+  const showAnimatedQuery = !query && !isQueryFocused
+
+  useEffect(() => {
+    if (!showAnimatedQuery) {
+      if (animatedQueryText) {
+        setAnimatedQueryText('')
+      }
+      if (animatedQueryDeleting) {
+        setAnimatedQueryDeleting(false)
+      }
+      return
+    }
+
+    const currentExample = ANIMATED_QUERY_EXAMPLES[animatedQueryIndex % ANIMATED_QUERY_EXAMPLES.length]
+    const hasTypedFullExample = animatedQueryText === currentExample
+    const hasDeletedEverything = animatedQueryText.length === 0
+
+    const timeoutId = window.setTimeout(() => {
+      if (!animatedQueryDeleting && !hasTypedFullExample) {
+        setAnimatedQueryText(currentExample.slice(0, animatedQueryText.length + 1))
+        return
+      }
+
+      if (!animatedQueryDeleting && hasTypedFullExample) {
+        setAnimatedQueryDeleting(true)
+        return
+      }
+
+      if (animatedQueryDeleting && !hasDeletedEverything) {
+        setAnimatedQueryText(currentExample.slice(0, Math.max(animatedQueryText.length - 1, 0)))
+        return
+      }
+
+      setAnimatedQueryDeleting(false)
+      setAnimatedQueryIndex((currentIndex) => (currentIndex + 1) % ANIMATED_QUERY_EXAMPLES.length)
+    }, !animatedQueryDeleting && !hasTypedFullExample ? 68 : !animatedQueryDeleting ? 1250 : hasDeletedEverything ? 240 : 34)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [animatedQueryDeleting, animatedQueryIndex, animatedQueryText, showAnimatedQuery])
 
   useEffect(() => {
     if (!appRef.current) return
@@ -299,14 +476,14 @@ function App(): JSX.Element {
     const scope = animationScopeRef.current
     if (!scope || loading) return
 
-    if (results.keywords_used.length > 0) {
+    if (queryBreakdownKeywords.length > 0) {
       scope.methods.animateKeywords?.()
     }
 
     if (results.suggestions.length > 0) {
       scope.methods.animateSuggestions?.()
     }
-  }, [results, loading])
+  }, [queryBreakdownKeywords.length, results.suggestions.length, loading])
 
   useEffect(() => {
     if (!autocompleteEnabled) {
@@ -469,114 +646,124 @@ function App(): JSX.Element {
         ))}
       </div>
 
-      <section className="hero">
-        <div className="hero-copy-block">
-          <p className="eyebrow">Describe a feeling. Discover a flower.</p>
-          <h1>FloraSense</h1>
-          <p className="hero-copy">
-            Describe a mood, color, level of care, or meaning, and receive a short ranked set of flower
-            suggestions that feels more curated than filtered.
-          </p>
-
-          <form className="search-panel" onSubmit={handleSubmit}>
-            <div className="search-row">
-              <img src={SearchIcon} alt="" aria-hidden="true" />
-              <input
-                ref={queryInputRef}
-                id="flower-query"
-                value={query}
-                onChange={(event) => handleQueryChange(event.target.value)}
-                onKeyDown={handleQueryKeyDown}
-                onFocus={() => {
-                  setAutocompleteEnabled(true)
-                  if (autocompleteSuggestions.length > 0) {
-                    setAutocompleteOpen(true)
-                  }
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => setAutocompleteOpen(false), 120)
-                }}
-                placeholder="e.g. a low maintenance white flower for love"
-                autoComplete="off"
-                aria-autocomplete="list"
-                aria-expanded={autocompleteOpen}
-                aria-controls="flower-autocomplete-list"
-              />
-              <button type="submit" disabled={loading}>
-                {loading ? 'Ranking...' : 'Search'}
-              </button>
-            </div>
-          </form>
-
-          <div
-            className={`sample-row ${(autocompleteOpen || autocompleteLoading) ? 'is-autocomplete' : ''}`}
-            id="flower-autocomplete-list"
-            role={(autocompleteOpen || autocompleteLoading) ? 'listbox' : undefined}
-          >
-            <div className={`sample-row-content ${(autocompleteOpen || autocompleteLoading) ? 'is-hidden' : ''}`}>
-              {SAMPLE_QUERIES.map((sample) => (
-                <button
-                  key={sample}
-                  type="button"
-                  className="sample-chip"
-                  onClick={() => void runSearch(sample)}
-                >
-                  {sample}
-                </button>
-              ))}
-            </div>
-            <div className={`autocomplete-content ${(autocompleteOpen || autocompleteLoading) ? 'is-open' : ''}`}>
-              <>
-                {autocompleteSuggestions.map((suggestion, index) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    role="option"
-                    aria-selected={index === activeAutocompleteIndex}
-                    className={`autocomplete-option ${index === activeAutocompleteIndex ? 'is-active' : ''}`}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => void applyAutocompleteSuggestion(suggestion)}
-                  >
-                    <span>{suggestion}</span>
-                    <small>SVD suggestion</small>
-                  </button>
-                ))}
-                {autocompleteLoading && autocompleteSuggestions.length === 0 && (
-                  <div className="autocomplete-empty">Loading suggestions...</div>
-                )}
-              </>
-            </div>
-          </div>
-        </div>
-
-        <div className="hero-side">
-          <div className="hero-note">
-            <span>How it works:</span>
-            <p>
-              The recommender projects flowers and queries into an SVD-based retrieval space built
-              from meanings, attributes, and flower descriptions, then ranks the closest matches.
+      <div className="ranker-shell">
+        <section className="ranker-intro">
+          <div className="hero-copy-block">
+            <p className="eyebrow">Describe a feeling. Discover a flower.</p>
+            <p className="hero-copy ranker-copy">
+              Describe a mood, color, level of care, or meaning, and receive a short ranked set of flower
+              suggestions that feels more curated than filtered.
             </p>
-          </div>
-        </div>
-      </section>
 
-      <section className="page-body">
+            <form className="search-panel" onSubmit={handleSubmit}>
+              <div className="search-row">
+                <img src={SearchIcon} alt="" aria-hidden="true" />
+                <div className="search-input-shell">
+                  {showAnimatedQuery && (
+                    <span className="search-ghost-query" aria-hidden="true">
+                      <span className="search-ghost-prefix">e.g. </span>
+                      {animatedQueryText}
+                    </span>
+                  )}
+                  <input
+                    ref={queryInputRef}
+                    id="flower-query"
+                    value={query}
+                    onChange={(event) => handleQueryChange(event.target.value)}
+                    onKeyDown={handleQueryKeyDown}
+                    onFocus={() => {
+                      setIsQueryFocused(true)
+                      setAutocompleteEnabled(true)
+                      if (autocompleteSuggestions.length > 0) {
+                        setAutocompleteOpen(true)
+                      }
+                    }}
+                    onBlur={() => {
+                      setIsQueryFocused(false)
+                      window.setTimeout(() => setAutocompleteOpen(false), 120)
+                    }}
+                    placeholder=""
+                    autoComplete="off"
+                    aria-autocomplete="list"
+                    aria-expanded={autocompleteOpen}
+                    aria-controls="flower-autocomplete-list"
+                  />
+                </div>
+                <button type="submit" disabled={loading}>
+                  {loading ? 'Ranking...' : 'Search'}
+                </button>
+              </div>
+            </form>
+
+            <div
+              className={`sample-row ${(autocompleteOpen || autocompleteLoading) ? 'is-autocomplete' : ''}`}
+              id="flower-autocomplete-list"
+              role={(autocompleteOpen || autocompleteLoading) ? 'listbox' : undefined}
+            >
+              <div className={`autocomplete-content ${(autocompleteOpen || autocompleteLoading) ? 'is-open' : ''}`}>
+                <>
+                  {autocompleteSuggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeAutocompleteIndex}
+                      className={`autocomplete-option ${index === activeAutocompleteIndex ? 'is-active' : ''}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void applyAutocompleteSuggestion(suggestion)}
+                    >
+                      <span>{suggestion}</span>
+                    </button>
+                  ))}
+                  {autocompleteLoading && autocompleteSuggestions.length === 0 && (
+                    <div className="autocomplete-empty">Loading suggestions...</div>
+                  )}
+                </>
+              </div>
+            </div>
+          </div>
+
+          <aside className="hero-side">
+            <div className="hero-note">
+              <span>How it works:</span>
+              <p>
+                The recommender projects flowers and queries into an SVD-based retrieval space built
+                from meanings, attributes, and flower descriptions, then ranks the closest matches.
+              </p>
+            </div>
+          </aside>
+        </section>
+
+        <section className="page-body">
         <aside className="query-rail">
           <div className="rail-heading">
             <p>Query Breakdown</p>
-            <span>{results.keywords_used.length}</span>
+            <span>{queryBreakdownKeywords.length}</span>
           </div>
           <p className="rail-copy">
-            Highest-weight semantic terms from the current request:
+            Top matched attributes and meanings across the ranked results:
           </p>
+
+          {!loading && results.query_latent_radar_chart && (
+            <figure className="query-radar-panel">
+              <div className="query-radar-head">
+                <span>query vector</span>
+                <small>latent svd profile</small>
+              </div>
+              <img
+                src={results.query_latent_radar_chart}
+                alt={`query latent radar chart. axes: ${results.query_latent_radar_axes.join(', ')}`}
+              />
+            </figure>
+          )}
 
           {loading ? (
             <div className="rail-empty">
               Projecting the query into the semantic flower space.
             </div>
-          ) : results.keywords_used.length > 0 ? (
+          ) : queryBreakdownKeywords.length > 0 ? (
             <div className="keyword-grid">
-              {results.keywords_used.map((keyword) => (
+              {queryBreakdownKeywords.map((keyword) => (
                 <div key={`${keyword.category}-${keyword.keyword}`} className="keyword-card">
                   <strong>{keyword.keyword}</strong>
                   <span>{keyword.category}</span>
@@ -630,16 +817,15 @@ function App(): JSX.Element {
                     key={suggestionKey}
                     className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
                   >
-                    {index === 0 && <span className="top-pick-banner">Top recommendation</span>}
-
                     <div className="card-topline">
                       <span className="rank-badge">#{index + 1}</span>
-                      <span className="score-badge">{suggestion.score.toFixed(2)}</span>
                     </div>
 
-                    <div className="card-header">
-                      <h2>{suggestion.name}</h2>
-                      <p>{suggestion.scientific_name}</p>
+                    <div className="card-overview">
+                      <div className="card-header">
+                        <h2>{suggestion.name}</h2>
+                        <p>{suggestion.scientific_name}</p>
+                      </div>
                     </div>
 
                     <div className="score-meter">
@@ -657,19 +843,42 @@ function App(): JSX.Element {
                     </div>
 
                     <div className="detail-grid">
-                      <div>
-                        <span className="detail-label">Colors</span>
-                        <p>{formatLabel(suggestion.colors)}</p>
+                      <div className="detail-summary">
+                        <div className="detail-card">
+                          <span className="detail-label">Colors</span>
+                          <p>{formatLabel(suggestion.colors)}</p>
+                        </div>
+                        <div className="detail-card">
+                          <span className="detail-label">Maintenance</span>
+                          <p>{formatLabel(suggestion.maintenance)}</p>
+                        </div>
+                        <div className="detail-card">
+                          <span className="detail-label">Plant Type</span>
+                          <p>{formatLabel(suggestion.plant_types)}</p>
+                        </div>
+                        {suggestion.occasions && (
+                          <div className="detail-card">
+                            <span className="detail-label">Occasions</span>
+                            <p>{renderHighlightedText(fullOccasionText, highlightTerms)}</p>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="detail-label">Maintenance</span>
-                        <p>{formatLabel(suggestion.maintenance)}</p>
-                      </div>
-                      <div>
-                        <span className="detail-label">Plant Type</span>
-                        <p>{formatLabel(suggestion.plant_types)}</p>
-                      </div>
-                      <div>
+
+                      {suggestion.latent_radar_chart && (
+                        <figure className="latent-radar-panel detail-card--radar">
+                          <div className="latent-radar-head">
+                            <span>flower vector</span>
+                            <small>latent svd profile</small>
+                          </div>
+                          <img
+                            src={suggestion.latent_radar_chart}
+                            alt={`latent svd radar chart for ${suggestion.name.toLowerCase()}. axes: ${suggestion.latent_radar_axes.join(', ')}`}
+                          />
+                          <figcaption>flower-only latent profile</figcaption>
+                        </figure>
+                      )}
+
+                      <div className="detail-card detail-card--meaning">
                         <span className="detail-label">Meaning</span>
                         <div className="detail-copy-group">
                           <p className={`detail-copy ${meaningIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''}`}>
@@ -691,12 +900,6 @@ function App(): JSX.Element {
                           )}
                         </div>
                       </div>
-                      {suggestion.occasions && (
-                        <div>
-                          <span className="detail-label">Occasions</span>
-                          <p>{renderHighlightedText(fullOccasionText, highlightTerms)}</p>
-                        </div>
-                      )}
                     </div>
 
                     <div className="match-list">
@@ -718,7 +921,8 @@ function App(): JSX.Element {
             </div>
           )}
         </div>
-      </section>
+        </section>
+      </div>
     </main>
   )
 }

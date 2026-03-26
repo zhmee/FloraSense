@@ -20,11 +20,15 @@ export interface FlowerSuggestion {
   occasions: string[]
   score: number
   matched_keywords: MatchedKeyword[]
+  latent_radar_chart: string | null
+  latent_radar_axes: string[]
 }
 
 export interface RecommendationResponse {
   query: string
   keywords_used: KeywordUsed[]
+  query_latent_radar_chart: string | null
+  query_latent_radar_axes: string[]
   suggestions: FlowerSuggestion[]
 }
 

@@ -9,4 +9,5 @@ scikit-learn>=1.4
 numpy>=1.26
 nltk==3.9.1
 scipy>=1.12
+matplotlib>=3.10
 git+https://github.com/MrPeterss/infosci-spark-client.git

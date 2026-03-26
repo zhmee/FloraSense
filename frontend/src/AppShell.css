@@ -1,0 +1,36 @@
+/* AppShell.css */
+
+.fs-shell {
+  min-height: 100vh;
+  background: #f0e6d5;
+}
+
+/*
+ * The existing .app-shell uses overflow: hidden to clip the garden backdrop.
+ * When nested inside AppShell the page-level scroll must not be clipped.
+ * We override just this one property — no changes to App.tsx needed.
+ */
+.fs-shell .app-shell {
+  /*
+   * 'clip' prevents the absolute-positioned garden backdrop from bleeding
+   * outside the section while still allowing the page-level scrollbar to work.
+   * (overflow: hidden would create a new scroll container and break page scroll)
+   */
+  overflow: clip;
+  margin-top: 0;
+  padding-top: clamp(20px, 4vw, 48px);
+  background: transparent;
+}
+
+.fs-shell__content {
+  position: relative;
+  margin-top: -1px;
+  scroll-margin-top: 104px;
+}
+
+/* Smooth view transitions */
+.fs-shell__content > div {
+  position: relative;
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}

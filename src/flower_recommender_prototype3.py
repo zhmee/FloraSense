@@ -24,6 +24,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
+from flower_radar_chart import build_latent_radar_chart, select_latent_axes
+
 
 # the file locations
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
@@ -92,6 +94,111 @@ def _tokenize(text: str) -> list[str]:
     Split normalized text into basic word-like tokens.
     """
     return TOKEN_PATTERN.findall(_normalize(text))
+
+
+def _token_root_variants(token: str) -> set[str]:
+    """
+    Build a small family of normalized token variants so explanation labels can
+    recover readable roots like "love" from inflected forms like "loveliness".
+    """
+    normalized_token = _normalize(token)
+    if not normalized_token or " " in normalized_token:
+        return set()
+
+    variants: set[str] = set()
+    pending = [normalized_token]
+
+    def add_variant(value: str) -> None:
+        candidate = _normalize(value)
+        if not candidate or " " in candidate or len(candidate) < 3 or candidate in variants:
+            return
+        pending.append(candidate)
+
+    while pending:
+        current = pending.pop()
+        if current in variants:
+            continue
+        variants.add(current)
+
+        if len(current) <= 3:
+            continue
+
+        if current.endswith("iness") and len(current) > 6:
+            base = current[:-5]
+            add_variant(base)
+            add_variant(base + "y")
+            if base.endswith("l"):
+                add_variant(base[:-1] + "e")
+
+        if current.endswith("ness") and len(current) > 6:
+            base = current[:-4]
+            add_variant(base)
+            if base.endswith("i"):
+                add_variant(base[:-1] + "y")
+            if base.endswith("l"):
+                add_variant(base[:-1] + "e")
+
+        if current.endswith("ly") and len(current) > 4:
+            base = current[:-2]
+            add_variant(base)
+            if base.endswith("i"):
+                add_variant(base[:-1] + "y")
+            if base.endswith("l"):
+                add_variant(base[:-1] + "e")
+
+        if current.endswith("ing") and len(current) > 5:
+            base = current[:-3]
+            add_variant(base)
+            add_variant(base + "e")
+            if len(base) >= 2 and base[-1] == base[-2]:
+                add_variant(base[:-1])
+
+        if current.endswith("ed") and len(current) > 4:
+            base = current[:-2]
+            add_variant(base)
+            add_variant(base + "e")
+            if len(base) >= 2 and base[-1] == base[-2]:
+                add_variant(base[:-1])
+
+        if current.endswith("ies") and len(current) > 4:
+            add_variant(current[:-3] + "y")
+
+        if current.endswith("es") and len(current) > 4:
+            add_variant(current[:-2])
+            add_variant(current[:-1])
+
+        if current.endswith("s") and len(current) > 3 and not current.endswith("ss"):
+            add_variant(current[:-1])
+
+    return variants
+
+
+def _tokens_share_root(left: str, right: str) -> bool:
+    left_variants = _token_root_variants(left)
+    right_variants = _token_root_variants(right)
+    if not left_variants or not right_variants:
+        return False
+    return bool(left_variants & right_variants)
+
+
+def _phrase_match_count(left_tokens: list[str], right_tokens: list[str]) -> int:
+    """
+    Count token-level matches between two phrases, allowing simple
+    morphology-aware matches on each token.
+    """
+    match_count = 0
+    used_right_indices = set()
+
+    for left_token in left_tokens:
+        for index, right_token in enumerate(right_tokens):
+            if index in used_right_indices:
+                continue
+            if _tokens_share_root(left_token, right_token):
+                used_right_indices.add(index)
+                match_count += 1
+                break
+
+    return match_count
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -221,6 +328,8 @@ def _empty_response(query: str, keywords: list[dict] | None = None) -> dict:
     return {
         "query": query,
         "keywords_used": keywords or [],
+        "query_latent_radar_chart": None,
+        "query_latent_radar_axes": [],
         # there's nothing we can do very sad
         "suggestions": [],
     }
@@ -247,9 +356,6 @@ def _new_flower_doc(name: str, scientific_name: str = "Unknown") -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Match different data sources to the same flower and build flower documents
-# ---------------------------------------------------------------------------
 # BASICALLY, ALL THIS IS JUST TO MATCH THE DIFF DATA SOURCES TO THE SAME FLOWER TO BUILD THE FLOWER DOCUMENTS
 def _best_matching_key(name: str, scientific_name: str, docs_by_key: dict[str, dict]) -> str | None:
     """
@@ -342,7 +448,6 @@ def _build_structured_passages(flower: dict) -> list[str]:
     for color in flower["colors"]:
         # add short color statements and color+maintenance combinations
         # i think they'll help with semantic retrieval without having hand-written rules
-        # i was right hehehehe (it's 3 am)
         passages.append(f"{name} can be {color}.")
         for maintenance in flower["maintenance"]:
             passages.append(f"{name} is a {maintenance} maintenance {color} flower.")
@@ -393,9 +498,7 @@ def _build_document(flower: dict) -> tuple[list[str], str]:
     WE CAN FINALLY BUILD THE FINAL TEXT DOCUMENT that the model will be able to vectorize and search over
     """
     structured_passages = _build_structured_passages(flower)
-
-    # if ther'es actual metadata, we want that clean text
-
+    # if there;s actual metadata, we want that clean text
     if _has_structured_signal(flower):
         passages = structured_passages
     else: # ...yk we can work with the scraped passages otherwise
@@ -426,7 +529,7 @@ def _combined_features(
 
 
 def _fit_lsa(matrix, max_components: int) -> tuple[TruncatedSVD | None, np.ndarray | None]:
-    # TRUNCATEDSVD IS THE GOAT TRUST we use ot to reduce the high-dimensional TF-IDF matrix
+    # TRUNCATEDSVD IS THE GOAT TRUST we use it to reduce the high-dimensional TF-IDF matrix
     # into a smaller latent space where related phrases can end up closer together EVEN IF 
     # THEY ARE NOT EXACT TOKEN MATCHES (now i gotta implement it tho mega sad)
     n_components = min(max_components, matrix.shape[0] - 1, matrix.shape[1] - 1)
@@ -479,6 +582,28 @@ def _is_redundant_keyword(term: str, selected_terms: list[str]) -> bool:
 
     # yk why not skip again if the term is already fully covered by the union of the chosen terms
     return len(term_tokens) >= 2 and term_tokens <= covered_tokens
+
+
+def _merge_keyword_lists(term_groups: list[list[dict]], limit: int) -> list[dict]:
+    """
+    Merge multiple keyword candidate lists while keeping the first clear,
+    non-redundant terms.
+    """
+    merged = []
+    selected_keywords: list[str] = []
+
+    for group in term_groups:
+        for term in group:
+            keyword = term["keyword"]
+            if _is_generic_flower_term(keyword) or _is_redundant_keyword(keyword, selected_keywords):
+                continue
+
+            selected_keywords.append(keyword)
+            merged.append(term)
+            if len(merged) >= limit:
+                return merged
+
+    return merged
 
 
 def _top_feature_terms(row, vectorizer: TfidfVectorizer, limit: int) -> list[dict]:
@@ -548,6 +673,8 @@ def _keyword_category_for_flower(keyword: str, flower: dict) -> str:
                 return category
             if keyword_tokens <= value_tokens or value_tokens <= keyword_tokens:
                 return category
+            if _phrase_match_count(list(keyword_tokens), list(value_tokens)) == min(len(keyword_tokens), len(value_tokens)):
+                return category
 
     return "semantic"
 
@@ -580,6 +707,358 @@ def _categorize_feature_terms_for_corpus(terms: list[dict], flowers: list[dict])
     for term in terms:
         term["category"] = _keyword_category_for_corpus(term["keyword"], flowers)
     return terms
+
+
+def _metadata_query_phrase_variants(category: str, value: str) -> list[tuple[str, str]]:
+    """
+    Return query phrases to look for plus the display label to expose in the UI.
+    """
+    normalized_value = _normalize(value)
+    if not normalized_value:
+        return []
+
+    variants = [(normalized_value, normalized_value)]
+    if category == "maintenance" and not normalized_value.endswith("maintenance"):
+        variants.insert(0, (f"{normalized_value} maintenance", f"{normalized_value} maintenance"))
+
+    seen = set()
+    deduped = []
+    for phrase, display in variants:
+        key = (phrase, display)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((phrase, display))
+    return deduped
+
+
+def _extract_query_metadata_keywords(query: str, flowers: list[dict]) -> list[dict]:
+    """
+    Pull explicit metadata phrases directly out of the raw query so the
+    query breakdown can show exact attributes like "pink" and
+    "low maintenance" instead of only composite TF-IDF phrases.
+    """
+    normalized_query = _normalize(query)
+    if not normalized_query:
+        return []
+
+    category_values: dict[str, set[str]] = {
+        "color": set(),
+        "maintenance": set(),
+        "plant_type": set(),
+    }
+    for flower in flowers:
+        category_values["color"].update(_normalize(value) for value in flower["colors"] if _normalize(value))
+        category_values["maintenance"].update(_normalize(value) for value in flower["maintenance"] if _normalize(value))
+        category_values["plant_type"].update(_normalize(value) for value in flower["plant_types"] if _normalize(value))
+
+    candidates = []
+    for category, values in category_values.items():
+        for value in sorted(values):
+            for phrase, display in _metadata_query_phrase_variants(category, value):
+                pattern = re.compile(rf"(?<!\w){re.escape(phrase)}(?!\w)")
+                for match in pattern.finditer(normalized_query):
+                    candidates.append(
+                        {
+                            "keyword": display,
+                            "category": category,
+                            "score": round(10 + len(phrase.split()) / 10, 2),
+                            "start": match.start(),
+                            "end": match.end(),
+                        }
+                    )
+
+    selected = []
+    occupied_ranges: list[tuple[int, int]] = []
+    seen_keywords = set()
+    for candidate in sorted(
+        candidates,
+        key=lambda item: (-(item["end"] - item["start"]), item["start"], item["keyword"]),
+    ):
+        overlaps_existing = any(
+            candidate["start"] < existing_end and candidate["end"] > existing_start
+            for existing_start, existing_end in occupied_ranges
+        )
+        if overlaps_existing:
+            continue
+
+        keyword_key = (candidate["category"], _normalize(candidate["keyword"]))
+        if keyword_key in seen_keywords:
+            continue
+
+        seen_keywords.add(keyword_key)
+        occupied_ranges.append((candidate["start"], candidate["end"]))
+        selected.append(candidate)
+
+    selected.sort(key=lambda item: (item["start"], item["category"], item["keyword"]))
+    return [
+        {
+            "keyword": item["keyword"],
+            "category": item["category"],
+            "score": item["score"],
+        }
+        for item in selected
+    ]
+
+
+def _collect_keyword_candidates(flowers: list[dict] | None = None, flower: dict | None = None) -> list[tuple[str, str]]:
+    """
+    Collect short, human-readable candidate phrases from flower metadata for
+    query explanation matching.
+    """
+    candidate_pairs = []
+    seen_pairs = set()
+
+    flower_iterable = [flower] if flower is not None else flowers or []
+    for item in flower_iterable:
+        raw_values = {
+            "color": item["colors"],
+            "maintenance": item["maintenance"],
+            "plant_type": item["plant_types"],
+            "occasion": item["occasions"],
+            "meaning": item["meanings"],
+        }
+
+        for category, values in raw_values.items():
+            for value in values:
+                if category in {"meaning", "occasion"}:
+                    chunks = _split_meaning_chunks(value)
+                else:
+                    chunks = [value]
+
+                for chunk in chunks:
+                    normalized_chunk = _normalize(chunk)
+                    chunk_tokens = _tokenize(normalized_chunk)
+                    if (
+                        not normalized_chunk
+                        or not chunk_tokens
+                        or len(chunk_tokens) > 3
+                        or _is_generic_flower_term(normalized_chunk)
+                    ):
+                        continue
+
+                    pair = (category, normalized_chunk)
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+                    candidate_pairs.append(pair)
+
+    return candidate_pairs
+
+
+def _extract_query_morphology_keywords(
+    query: str,
+    candidate_pairs: list[tuple[str, str]],
+    limit: int,
+) -> list[dict]:
+    """
+    Recover readable explanation terms from raw query morphology, so forms like
+    "loveliness" can still surface as "love" in the UI.
+    """
+    query_tokens = _tokenize(query)
+    normalized_query = _normalize(query)
+    if not normalized_query or not query_tokens:
+        return []
+
+    category_priority = {
+        "color": 0,
+        "maintenance": 1,
+        "plant_type": 2,
+        "occasion": 3,
+        "meaning": 4,
+    }
+
+    candidates = []
+    for category, label in candidate_pairs:
+        label_tokens = _tokenize(label)
+        if not label_tokens:
+            continue
+
+        match_count = _phrase_match_count(query_tokens, label_tokens)
+        if match_count < len(label_tokens):
+            continue
+
+        exact_phrase_match = bool(re.search(rf"(?<!\w){re.escape(label)}(?!\w)", normalized_query))
+        candidates.append(
+            {
+                "keyword": label,
+                "category": category,
+                "score": round(8.5 + (0.4 if exact_phrase_match else 0.0) + len(label_tokens) / 10, 2),
+                "exact": exact_phrase_match,
+                "priority": category_priority.get(category, 99),
+                "token_count": len(label_tokens),
+            }
+        )
+
+    selected = []
+    seen_keywords = set()
+    for candidate in sorted(
+        candidates,
+        key=lambda item: (-int(item["exact"]), -item["token_count"], item["priority"], item["keyword"]),
+    ):
+        keyword_key = (candidate["category"], candidate["keyword"])
+        if keyword_key in seen_keywords:
+            continue
+        seen_keywords.add(keyword_key)
+        selected.append(
+            {
+                "keyword": candidate["keyword"],
+                "category": candidate["category"],
+                "score": candidate["score"],
+            }
+        )
+        if len(selected) >= limit:
+            break
+
+    return selected
+
+
+def _build_query_breakdown_keywords(
+    query: str,
+    query_word_matrix,
+    word_vectorizer: TfidfVectorizer,
+    flowers: list[dict],
+    limit: int,
+) -> list[dict]:
+    """
+    Combine exact metadata phrases from the query with the strongest semantic terms.
+    """
+    metadata_keywords = _extract_query_metadata_keywords(query, flowers)
+    morphology_keywords = _extract_query_morphology_keywords(
+        query,
+        _collect_keyword_candidates(flowers=flowers),
+        limit,
+    )
+    semantic_keywords = _categorize_feature_terms_for_corpus(
+        _top_feature_terms(query_word_matrix, word_vectorizer, limit),
+        flowers,
+    )
+
+    return _merge_keyword_lists(
+        [metadata_keywords, morphology_keywords, semantic_keywords],
+        limit,
+    )
+
+
+def _relabel_query_axes(
+    axis_indices: np.ndarray,
+    fallback_axis_labels: list[str],
+    query_keywords: list[dict],
+    svd: TruncatedSVD | None,
+    word_vectorizer: TfidfVectorizer,
+) -> list[str]:
+    """
+    Prefer exact query-matched labels for selected latent axes when those
+    query terms have meaningful word-feature loadings on the same components.
+    """
+    if svd is None or len(axis_indices) == 0 or not query_keywords:
+        return fallback_axis_labels
+
+    word_feature_names = word_vectorizer.get_feature_names_out()
+    if len(word_feature_names) == 0:
+        return fallback_axis_labels
+
+    vocabulary = word_vectorizer.vocabulary_
+    query_candidates = []
+    seen_candidates = set()
+    for item in query_keywords:
+        label = item["keyword"].strip()
+        normalized_label = _normalize(label)
+        tokens = _tokenize(label)
+        if not normalized_label or normalized_label in seen_candidates or not tokens:
+            continue
+
+        feature_indices = []
+        for size in range(min(3, len(tokens)), 0, -1):
+            for start in range(0, len(tokens) - size + 1):
+                phrase = " ".join(tokens[start : start + size])
+                feature_index = vocabulary.get(phrase)
+                if feature_index is not None:
+                    feature_indices.append(int(feature_index))
+
+        if not feature_indices:
+            continue
+
+        seen_candidates.add(normalized_label)
+        query_candidates.append(
+            {
+                "label": label,
+                "normalized": normalized_label,
+                "category": item.get("category", "semantic"),
+                "feature_indices": sorted(set(feature_indices)),
+            }
+        )
+
+    if not query_candidates:
+        return fallback_axis_labels
+
+    relabeled_axes = list(fallback_axis_labels)
+    used_candidate_labels = set()
+
+    for axis_position, axis_index in enumerate(np.asarray(axis_indices, dtype=int)):
+        if axis_index >= svd.components_.shape[0]:
+            continue
+
+        word_loadings = svd.components_[int(axis_index), : len(word_feature_names)]
+        top_loading = float(np.max(np.abs(word_loadings)))
+        if top_loading <= 0:
+            continue
+
+        best_candidate = None
+        best_score = (-1.0, -1.0, -1.0)
+        for candidate in query_candidates:
+            if candidate["normalized"] in used_candidate_labels:
+                continue
+
+            candidate_loading = max(
+                float(np.abs(word_loadings[feature_index]))
+                for feature_index in candidate["feature_indices"]
+            )
+            loading_ratio = candidate_loading / top_loading
+            if loading_ratio < 0.18:
+                continue
+
+            category_bonus = 1.0 if candidate["category"] != "semantic" else 0.0
+            candidate_score = (
+                loading_ratio,
+                category_bonus,
+                float(len(candidate["normalized"])),
+            )
+            if candidate_score > best_score:
+                best_score = candidate_score
+                best_candidate = candidate
+
+        if best_candidate is None:
+            continue
+
+        used_candidate_labels.add(best_candidate["normalized"])
+        relabeled_axes[axis_position] = best_candidate["label"]
+
+    return relabeled_axes
+
+
+def _print_query_latent_dimensions(
+    query: str,
+    query_vector: np.ndarray,
+    axis_indices: np.ndarray,
+    axis_labels: list[str],
+) -> None:
+    """
+    Debug-only terminal print for the selected latent dimensions behind the query radar.
+    """
+    if len(axis_indices) == 0 or not axis_labels:
+        return
+
+    entries = []
+    profile_array = np.asarray(query_vector, dtype=np.float32).ravel()
+    for axis_index, axis_label in zip(np.asarray(axis_indices, dtype=int), axis_labels):
+        if int(axis_index) >= profile_array.size:
+            continue
+        axis_value = float(profile_array[int(axis_index)])
+        entries.append(f"{int(axis_index)}:{axis_label}={axis_value:.4f}")
+
+    if entries:
+        print(f"[latent dims] query={query!r} -> " + ", ".join(entries))
 
 
 def _select_display_texts(texts: list[str], query: str, limit: int) -> list[str]:
@@ -748,6 +1227,121 @@ def _build_corpus_docs() -> list[dict]:
     return flowers
 
 
+def _component_labels_from_svd(
+    svd: TruncatedSVD | None,
+    word_vectorizer: TfidfVectorizer,
+    flowers: list[dict],
+    max_terms: int = 3,
+) -> list[str]:
+    """
+    Give each latent dimension a human-readable label based on its
+    strongest word features.
+    """
+    if svd is None:
+        return []
+
+    word_feature_names = word_vectorizer.get_feature_names_out()
+    if len(word_feature_names) == 0:
+        return []
+
+    name_like_terms = set()
+    descriptor_candidates = []
+    seen_descriptors = set()
+
+    def add_descriptor(value: str) -> None:
+        normalized_value = _normalize(value)
+        tokens = set(_tokenize(value))
+        if (
+            not normalized_value
+            or normalized_value in seen_descriptors
+            or not tokens
+            or normalized_value in name_like_terms
+            or _is_generic_flower_term(normalized_value)
+        ):
+            return
+        seen_descriptors.add(normalized_value)
+        descriptor_candidates.append(
+            {
+                "label": value.strip(),
+                "normalized": normalized_value,
+                "tokens": tokens,
+            }
+        )
+
+    for flower in flowers:
+        alias_values = {
+            flower["name"],
+            flower["scientific_name"],
+            *flower["aliases"],
+        }
+        for alias in alias_values:
+            normalized_alias = _normalize(alias)
+            if normalized_alias:
+                name_like_terms.add(normalized_alias)
+            for token in _tokenize(alias):
+                if len(token) >= 4:
+                    name_like_terms.add(token)
+
+    for flower in flowers:
+        for maintenance in flower["maintenance"]:
+            add_descriptor(maintenance)
+            add_descriptor(f"{maintenance} maintenance")
+        for color in flower["colors"]:
+            add_descriptor(color)
+        for plant_type in flower["plant_types"]:
+            add_descriptor(plant_type)
+        for meaning in flower["meanings"]:
+            for chunk in _split_meaning_chunks(meaning):
+                if 1 <= len(chunk.split()) <= max_terms:
+                    add_descriptor(chunk)
+        for occasion in flower["occasions"]:
+            for chunk in _split_meaning_chunks(occasion):
+                if 1 <= len(chunk.split()) <= max_terms:
+                    add_descriptor(chunk)
+
+    labels = []
+    for component in svd.components_:
+        word_loadings = component[: len(word_feature_names)]
+        ranked_indices = np.argsort(np.abs(word_loadings))[::-1]
+        label = None
+
+        for index in ranked_indices[:40]:
+            term = word_feature_names[int(index)]
+            normalized_term = _normalize(term)
+            if (
+                not normalized_term
+                or _is_generic_flower_term(term)
+                or normalized_term in name_like_terms
+                or any(token in name_like_terms for token in _tokenize(term))
+            ):
+                continue
+
+            term_tokens = set(_tokenize(term))
+            best_descriptor = None
+            best_descriptor_score = (-1, -1)
+            for candidate in descriptor_candidates:
+                candidate_tokens = candidate["tokens"]
+                overlap = len(candidate_tokens & term_tokens)
+                if overlap == 0:
+                    continue
+                if candidate_tokens <= term_tokens or term_tokens <= candidate_tokens:
+                    score = (overlap, len(candidate["normalized"]))
+                    if score > best_descriptor_score:
+                        best_descriptor_score = score
+                        best_descriptor = candidate["label"]
+
+            if best_descriptor:
+                label = best_descriptor
+                break
+
+            label = term
+            break
+
+        labels.append(label or "semantic signal")
+
+    return labels
+
+
 @lru_cache(maxsize=1)
 def _load_model() -> tuple:
     # build the vectorizers and SVD model once, then reuse them for all queries (bc SVD expensive af)
@@ -778,6 +1372,7 @@ def _load_model() -> tuple:
     char_matrix = char_vectorizer.fit_transform(documents)
     combined_matrix = hstack([word_matrix, char_matrix], format="csr")
     svd, lsa_matrix = _fit_lsa(combined_matrix, MAX_SVD_COMPONENTS)
+    component_labels = _component_labels_from_svd(svd, word_vectorizer, flowers)
 
     return (
         flowers,
@@ -789,6 +1384,7 @@ def _load_model() -> tuple:
         int(combined_matrix.shape[1]),
         svd,
         lsa_matrix,
+        component_labels,
     )
 
 
@@ -796,7 +1392,7 @@ def model_info() -> dict:
     """
     Return basic information about the built model for debugging or inspection.
     """
-    flowers, word_vectorizer, char_vectorizer, _, feature_count, svd, _ = _load_model()
+    flowers, word_vectorizer, char_vectorizer, _, feature_count, svd, _, _ = _load_model()
     return {
         "retrieval_mode": "svd_only",
         "corpus_dir": str(TEXT_CORPUS_DIR),
@@ -816,22 +1412,38 @@ def _build_suggestion(
     query: str,
     similarity: float,
     top_score: float,
+    query_lsa_vector: np.ndarray,
+    flower_lsa_vector: np.ndarray,
     query_word_matrix,
     word_matrix,
     index: int,
     word_vectorizer: TfidfVectorizer,
     char_vectorizer: TfidfVectorizer,
     svd: TruncatedSVD | None,
+    component_labels: list[str],
+    query_axis_indices: np.ndarray,
+    query_axis_labels: list[str],
 ) -> dict:
     # convert one ranked flower into the response shape expected by the frontend
-    matched_terms = _top_feature_terms(
-        # multiply the query and flower word vectors to find shared explanation terms.
-        query_word_matrix.multiply(word_matrix[index]),
-        word_vectorizer,
+    matched_terms = _merge_keyword_lists(
+        [
+            _extract_query_morphology_keywords(
+                query,
+                _collect_keyword_candidates(flower=flower),
+                MAX_MATCHED_KEYWORDS,
+            ),
+            _top_feature_terms(
+                # multiply the query and flower word vectors to find shared explanation terms.
+                query_word_matrix.multiply(word_matrix[index]),
+                word_vectorizer,
+                MAX_MATCHED_KEYWORDS,
+            ),
+        ],
         MAX_MATCHED_KEYWORDS,
     )
     for matched_term in matched_terms:
-        matched_term["category"] = _keyword_category_for_flower(matched_term["keyword"], flower)
+        if matched_term["category"] == "semantic":
+            matched_term["category"] = _keyword_category_for_flower(matched_term["keyword"], flower)
     displayed_meanings = _select_display_texts(flower["meanings"], query, 2)
     displayed_occasions = _select_display_texts(flower["occasions"], query, 2)
 
@@ -840,6 +1452,16 @@ def _build_suggestion(
         highlights = _top_passages(query, flower["passages"], word_vectorizer, char_vectorizer, svd)
         displayed_meanings = highlights[:2]
         displayed_occasions = highlights[2:]
+
+    radar_chart = None
+    if len(query_axis_labels) >= 3:
+        radar_chart = build_latent_radar_chart(
+            flower_lsa_vector,
+            component_labels,
+            profile_kind="flower",
+            axis_indices=query_axis_indices,
+            axis_labels=query_axis_labels,
+        )
 
     return {
         "name": flower["name"],
@@ -852,6 +1474,8 @@ def _build_suggestion(
         # this score is relative to the best result for the same query
         "score": round((similarity / top_score) * 100, 2),
         "matched_keywords": matched_terms,
+        "latent_radar_chart": None if radar_chart is None else radar_chart["image_data_url"],
+        "latent_radar_axes": [] if radar_chart is None else radar_chart["axis_labels"],
     }
 
 # NOW FOR THE ACTUAL THING HOLY
@@ -865,7 +1489,7 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     if not query or not query.strip():
         return _empty_response(query)
 
-    flowers, word_vectorizer, char_vectorizer, word_matrix, _, svd, lsa_matrix = _load_model()
+    flowers, word_vectorizer, char_vectorizer, word_matrix, _, svd, lsa_matrix, component_labels = _load_model()
     query_word_matrix = word_vectorizer.transform([query])
     query_combined_matrix = _combined_features([query], word_vectorizer, char_vectorizer)
 
@@ -881,17 +1505,44 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
 
     # keep only the positive similarities. non-positive values can go bye bye
     positive_scores = [float(similarities[index]) for index in ranked_indices if float(similarities[index]) > 0]
+    query_breakdown_keywords = _build_query_breakdown_keywords(
+        query,
+        query_word_matrix,
+        word_vectorizer,
+        flowers,
+        MAX_QUERY_KEYWORDS,
+    )
     if not positive_scores:
         # even if no flower matches, we can still expose important query terms
-        return _empty_response(
-            query,
-            _categorize_feature_terms_for_corpus(
-                _top_feature_terms(query_word_matrix, word_vectorizer, MAX_QUERY_KEYWORDS),
-                flowers,
-            ),
-        )
+        return _empty_response(query, query_breakdown_keywords)
 
     top_score = positive_scores[0]
+    query_axes = select_latent_axes(query_lsa[0], component_labels)
+    query_radar_chart = None
+    query_axis_indices = np.asarray([], dtype=int)
+    query_axis_labels: list[str] = []
+    if query_axes is not None:
+        query_axis_indices = query_axes["axis_indices"]
+        query_axis_labels = _relabel_query_axes(
+            query_axis_indices,
+            query_axes["axis_labels"],
+            query_breakdown_keywords,
+            svd,
+            word_vectorizer,
+        )
+        _print_query_latent_dimensions(
+            query,
+            query_lsa[0],
+            query_axis_indices,
+            query_axis_labels,
+        )
+        query_radar_chart = build_latent_radar_chart(
+            query_lsa[0],
+            component_labels,
+            profile_kind="query",
+            axis_indices=query_axis_indices,
+            axis_labels=query_axis_labels,
+        )
     suggestions = []
     for index in ranked_indices:
         similarity = float(similarities[index])
@@ -904,21 +1555,25 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
                 query,
                 similarity,
                 top_score,
+                query_lsa[0],
+                lsa_matrix[index],
                 query_word_matrix,
                 word_matrix,
                 index,
                 word_vectorizer,
                 char_vectorizer,
                 svd,
+                component_labels,
+                query_axis_indices,
+                query_axis_labels,
             )
         )
 
     # FINAALLLLYYYYY, WE CAN RETURN THE SUGGESTIONS OHHHH MY LAWWWWD THERE HAS TO BE AN EASIER WAY TO DO THIS
     return {
         "query": query,
-        "keywords_used": _categorize_feature_terms_for_corpus(
-            _top_feature_terms(query_word_matrix, word_vectorizer, MAX_QUERY_KEYWORDS),
-            flowers,
-        ),
+        "keywords_used": query_breakdown_keywords,
+        "query_latent_radar_chart": None if query_radar_chart is None else query_radar_chart["image_data_url"],
+        "query_latent_radar_axes": [] if query_radar_chart is None else query_radar_chart["axis_labels"],
         "suggestions": suggestions,
     }
