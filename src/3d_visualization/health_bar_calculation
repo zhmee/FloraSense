@@ -1,0 +1,83 @@
+# bouquet.py
+from __future__ import annotations
+import numpy as np
+import sys
+from pathlib import Path
+
+# add src/ to path so we can import from flower_recommender_prototype3.py
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from flower_recommender_prototype3 import (
+    recommend_flowers,
+    get_flower_vectors,
+    _collect_keyword_candidates,
+    _extract_query_morphology_keywords,
+)
+
+
+# calculates the "health bar" meaning breakdown for the current bouquet
+# selected_scientific_names: list of scientific names the user has selected, passed in by the frontend
+def get_bouquet_meanings(selected_scientific_names: list[str]) -> dict:
+
+    # if the frontend sent an empty list, return early with nothing
+    if not selected_scientific_names:
+        return {"meanings": []}
+
+    # get the flower data and LSA vectors for the user selected flowers
+    data = get_flower_vectors(selected_scientific_names)
+    selected_flowers = data["flowers"]  # list of flower dicts with name, meanings, colors, etc.
+    total = data["total_flower_count"]  # total number of flowers in the full corpus (used for IDF)
+
+    # if none of the scientific names matched anything in the corpus, return early
+    if not selected_flowers:
+        return {"meanings": []}
+
+    # build the candidate pairs from just the selected flowers
+    # this is the list of known metadata keywords that _extract_query_morphology_keywords will look for
+    candidate_pairs = _collect_keyword_candidates(flowers=selected_flowers)
+
+    # doc_freq tracks how many of the selected flowers share each keyword
+    doc_freq: dict[str, int] = {}
+
+    # flower_meanings holds one set of keyword strings per flower
+    # kept separate so we can score each flower's contribution individually
+    flower_meanings = []
+
+    for f in selected_flowers:
+        # join all meaning strings for this flower into one text blob to extract keywords from
+        meaning_text = " ".join(f["meanings"])
+
+        # extract clean keywords using the same morphology-aware pipeline as the query breakdown
+        # returns list of {"keyword": ..., "category": ..., "score": ...}
+        extracted = _extract_query_morphology_keywords(meaning_text, candidate_pairs, limit=20)
+
+        # keep only the keyword strings as a set (deduplicated per flower)
+        unique_keywords = {item["keyword"] for item in extracted}
+
+        flower_meanings.append(unique_keywords)
+        for keyword in unique_keywords:
+            # count how many selected flowers have this keyword (for IDF weighting)
+            doc_freq[keyword] = doc_freq.get(keyword, 0) + 1
+
+    # accumulate IDF-weighted scores across all selected flowers
+    meaning_scores: dict[str, float] = {}
+    for unique_keywords in flower_meanings:
+        for keyword in unique_keywords:
+            # rare keywords in the full corpus score higher than common ones
+            idf = np.log(total / doc_freq.get(keyword, 1))
+            meaning_scores[keyword] = meaning_scores.get(keyword, 0) + idf
+
+    if not meaning_scores:
+        return {"meanings": []}
+
+    # normalize all scores to [0, 1] relative to the top keyword (top keyword = 1.0)
+    top_val = max(meaning_scores.values())
+    meanings = sorted(
+        [
+            {"label": k, "score": round(v / top_val, 3)}
+            for k, v in meaning_scores.items()
+            if v / top_val >= 0.15  # drop noise below 15% of top score
+        ],
+        key=lambda x: -x["score"]  # highest score first
+    )[:8]  # cap at 8 so the UI health bar doesn't get overwhelming
+
+    return {"meanings": meanings}

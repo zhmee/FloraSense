@@ -1,0 +1,42 @@
+from __future__ import annotations
+import numpy as np
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from flower_recommender_prototype3 import recommend_flowers, get_flower_vectors
+
+def get_bouquet_recommendations(selected_scientific_names: list[str]) -> dict:
+    if not selected_scientific_names:
+        return {"recommendations": []}
+
+    data = get_flower_vectors(selected_scientific_names)
+    selected_flowers = data["flowers"]
+
+    if not selected_flowers:
+        return {"recommendations": []}
+
+    meaning_chunks = []
+    for f in selected_flowers:
+        for meaning in f["meanings"]:
+            for chunk in meaning.split(";"):
+                chunk = chunk.strip(" .:")
+                if chunk and len(chunk.split()) <= 5:
+                    meaning_chunks.append(chunk)
+
+    seen, deduped = set(), []
+    for chunk in meaning_chunks:
+        key = chunk.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(chunk)
+
+    pseudo_query = " ".join(deduped[:15])
+    result = recommend_flowers(pseudo_query, limit=10)
+
+    selected_names = {f["name"].lower() for f in selected_flowers}
+    recommendations = [
+        s for s in result["suggestions"]
+        if s["name"].lower() not in selected_names
+    ][:5]
+
+    return {"recommendations": recommendations}

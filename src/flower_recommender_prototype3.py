@@ -1478,6 +1478,40 @@ def _build_suggestion(
         "latent_radar_axes": [] if radar_chart is None else radar_chart["axis_labels"],
     }
 
+
+# ADDED THIS BECAUSE I PLAN TO REUSE THE LOGIC HERE FOR MY BACKEND FOR THE 3D VISUALIZATION
+def get_flower_vectors(scientific_names: list[str]) -> dict:
+    """
+    Public interface for other modules that need flower data.
+    Returns everything update_bouquet needs without exposing internals.
+    """
+    flowers, _, _, _, _, _, lsa_matrix, _ = _load_model()
+    
+    sci_to_index = {
+        _normalize(f["scientific_name"]): i
+        for i, f in enumerate(flowers)
+    }
+    
+    result = []
+    for name in scientific_names:
+        key = _normalize(name)
+        if key in sci_to_index:
+            i = sci_to_index[key]
+            result.append({
+                "index": i,
+                "name": flowers[i]["name"],
+                "scientific_name": flowers[i]["scientific_name"],
+                "meanings": flowers[i]["meanings"],
+                "colors": flowers[i]["colors"],
+                "lsa_vector": lsa_matrix[i],
+            })
+    
+    return {
+        "flowers": result,
+        "total_flower_count": len(flowers),
+    }
+
+
 # NOW FOR THE ACTUAL THING HOLY
 def recommend_flowers(query: str, limit: int = 5) -> dict:
     """
