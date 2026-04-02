@@ -16,6 +16,7 @@ import csv
 import re
 from functools import lru_cache
 from pathlib import Path
+import json
 
 import numpy as np
 from scipy.sparse import hstack
@@ -30,6 +31,13 @@ from flower_radar_chart import build_latent_radar_chart, select_latent_axes
 # the file locations
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
 TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_texts"
+
+# optional external map of scraped page keys -> image URLs
+_IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
+try:
+    _IMAGE_MAP = json.loads(_IMAGE_MAP_PATH.read_text(encoding="utf-8"))
+except Exception:
+    _IMAGE_MAP = {}
 
 # configuration values for the model and for the returned UI payload.
 MAX_SVD_COMPONENTS = 96
@@ -1224,6 +1232,31 @@ def _build_corpus_docs() -> list[dict]:
         flower["document"] = document
         flowers.append(flower)
     # sorting keeps the model build consistent across runs
+
+    # attach image_url to each flower using the optional image map (tolerant matching)
+    for flower in flowers:
+        flower_key = _normalize(flower.get("name", ""))
+        image_url = None
+        for map_key, url in _IMAGE_MAP.items():
+            if not map_key:
+                continue
+            norm_map_key = _normalize(map_key)
+            # direct slug-like match
+            if flower_key and (flower_key == norm_map_key or flower_key in norm_map_key or norm_map_key in flower_key):
+                image_url = url
+                break
+            # try aliases
+            for alias in flower.get("aliases", set()):
+                if not alias:
+                    continue
+                if norm_map_key == _normalize(alias) or norm_map_key in _normalize(alias) or _normalize(alias) in norm_map_key:
+                    image_url = url
+                    break
+            if image_url:
+                break
+
+        flower["image_url"] = image_url
+
     return flowers
 
 
@@ -1476,6 +1509,7 @@ def _build_suggestion(
         "matched_keywords": matched_terms,
         "latent_radar_chart": None if radar_chart is None else radar_chart["image_data_url"],
         "latent_radar_axes": [] if radar_chart is None else radar_chart["axis_labels"],
+        "image_url": flower.get("image_url"),
     }
 
 

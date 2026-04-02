@@ -878,6 +878,16 @@ function App(): JSX.Element {
                         </figure>
                       )}
 
+                      {suggestion.image_url && (
+                        <div className="card-image-shell">
+                          <img
+                            className="suggestion-image"
+                            src={suggestion.image_url}
+                            alt={suggestion.name}
+                          />
+                        </div>
+                      )}
+
                       <div className="detail-card detail-card--meaning">
                         <span className="detail-label">Meaning</span>
                         <div className="detail-copy-group">

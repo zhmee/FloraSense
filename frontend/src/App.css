@@ -124,6 +124,26 @@
   color: var(--accent-deep);
 }
 
+/* suggestion card image styling */
+.card-image-shell {
+  width: 128px;
+  height: 96px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+ background: linear-gradient(180deg, #fff, #f8f1e5);
+ box-shadow: var(--shadow);
+}
+.suggestion-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+@media (max-width: 760px) {
+  .card-image-shell { width: 88px; height: 64px; }
+}
+
 .hero-copy {
   max-width: 640px;
   margin-top: 0;

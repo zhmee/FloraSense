@@ -22,6 +22,7 @@ export interface FlowerSuggestion {
   matched_keywords: MatchedKeyword[]
   latent_radar_chart: string | null
   latent_radar_axes: string[]
+  image_url?: string
 }
 
 export interface RecommendationResponse {
