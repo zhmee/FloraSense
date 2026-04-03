@@ -709,7 +709,8 @@
 }
 
 .card-header {
-  max-width: 540px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .card-header h2 {
@@ -725,6 +726,46 @@
 .card-overview {
   display: block;
   margin-top: 8px;
+}
+
+.card-topline {
+  display: block;
+}
+
+.card-image-shell--topline {
+  position: absolute;
+  top: clamp(18px, 2.4vw, 24px);
+  right: clamp(18px, 2.4vw, 24px);
+  width: 108px;
+  height: 108px;
+  border-radius: 16px;
+}
+
+.suggestion-card.has-header-image .card-overview {
+  min-height: 74px;
+}
+
+.suggestion-card.has-header-image .card-header {
+  padding-right: 128px;
+}
+
+.suggestion-card.has-header-image .score-meter {
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .card-image-shell--topline {
+    width: 88px;
+    height: 88px;
+  }
+
+  .suggestion-card.has-header-image .card-overview {
+    min-height: 62px;
+  }
+
+  .suggestion-card.has-header-image .card-header {
+    padding-right: 102px;
+  }
 }
 
 .score-meter {

@@ -815,10 +815,19 @@ function App(): JSX.Element {
                 return (
                   <article
                     key={suggestionKey}
-                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
+                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''} ${suggestion.image_url ? 'has-header-image' : ''}`}
                   >
                     <div className="card-topline">
                       <span className="rank-badge">#{index + 1}</span>
+                      {suggestion.image_url && (
+                        <div className="card-image-shell card-image-shell--topline">
+                          <img
+                            className="suggestion-image"
+                            src={suggestion.image_url}
+                            alt={suggestion.name}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="card-overview">
@@ -876,16 +885,6 @@ function App(): JSX.Element {
                           />
                           <figcaption>flower-only latent profile</figcaption>
                         </figure>
-                      )}
-
-                      {suggestion.image_url && (
-                        <div className="card-image-shell">
-                          <img
-                            className="suggestion-image"
-                            src={suggestion.image_url}
-                            alt={suggestion.name}
-                          />
-                        </div>
                       )}
 
                       <div className="detail-card detail-card--meaning">

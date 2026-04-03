@@ -37,3 +37,40 @@ export interface AutocompleteResponse {
   query: string
   suggestions: string[]
 }
+
+export interface VisualizerFlower {
+  id: string
+  name: string
+  scientific_name: string
+  image_url?: string
+  colors: string[]
+  plant_types: string[]
+  maintenance: string[]
+  meanings: string[]
+  occasions: string[]
+  primary_color: string
+  primary_meaning: string
+  primary_occasion: string
+  latent_axes: string[]
+  latent_position: {
+    x: number
+    y: number
+    z: number
+  }
+  summary: string[]
+}
+
+export interface VisualizerFlowersResponse {
+  flowers: VisualizerFlower[]
+}
+
+export interface BouquetMeaning {
+  label: string
+  score: number
+}
+
+export interface BouquetInsightsResponse {
+  scientific_names: string[]
+  meanings: BouquetMeaning[]
+  recommendations: FlowerSuggestion[]
+}

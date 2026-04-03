@@ -31,6 +31,7 @@ from flower_radar_chart import build_latent_radar_chart, select_latent_axes
 # the file locations
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
 TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_texts"
+FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
 
 # optional external map of scraped page keys -> image URLs
 _IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
@@ -38,6 +39,16 @@ try:
     _IMAGE_MAP = json.loads(_IMAGE_MAP_PATH.read_text(encoding="utf-8"))
 except Exception:
     _IMAGE_MAP = {}
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+try:
+    _LOCAL_IMAGE_FILES = {
+        re.sub(r"[^a-z0-9\s]+", " ", path.stem.lower()).strip(): path.name
+        for path in FLOWER_IMAGE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
+    }
+except Exception:
+    _LOCAL_IMAGE_FILES = {}
 
 # configuration values for the model and for the returned UI payload.
 MAX_SVD_COMPONENTS = 96
@@ -314,6 +325,32 @@ def _alias_variants(name: str) -> set[str]:
         variants.add(" ".join([*parts[:-1], plural_last]))
 
     return {variant for variant in variants if variant}
+
+
+def _matching_image_candidates(flower: dict) -> list[tuple[str, str]]:
+    candidates = []
+    flower_key = _normalize(flower.get("name", ""))
+    if flower_key:
+        candidates.append(("name", flower_key))
+    for alias in flower.get("aliases", set()):
+        normalized_alias = _normalize(alias)
+        if normalized_alias:
+            candidates.append(("alias", normalized_alias))
+    return candidates
+
+
+def _resolve_flower_image_url(flower: dict) -> str | None:
+    for _, candidate in _matching_image_candidates(flower):
+        for local_key, filename in _LOCAL_IMAGE_FILES.items():
+            if candidate == local_key or candidate in local_key or local_key in candidate:
+                return f"/api/flower-images/{filename}"
+
+        for remote_key, remote_url in _IMAGE_MAP.items():
+            normalized_remote_key = _normalize(remote_key)
+            if candidate == normalized_remote_key or candidate in normalized_remote_key or normalized_remote_key in candidate:
+                return remote_url
+
+    return None
 
 
 def _join_human(values: list[str]) -> str:
@@ -820,11 +857,11 @@ def _collect_keyword_candidates(flowers: list[dict] | None = None, flower: dict 
     flower_iterable = [flower] if flower is not None else flowers or []
     for item in flower_iterable:
         raw_values = {
-            "color": item["colors"],
-            "maintenance": item["maintenance"],
-            "plant_type": item["plant_types"],
-            "occasion": item["occasions"],
-            "meaning": item["meanings"],
+            "color": item.get("colors", []),
+            "maintenance": item.get("maintenance", []),
+            "plant_type": item.get("plant_types", []),
+            "occasion": item.get("occasions", []),
+            "meaning": item.get("meanings", []),
         }
 
         for category, values in raw_values.items():
@@ -1235,27 +1272,7 @@ def _build_corpus_docs() -> list[dict]:
 
     # attach image_url to each flower using the optional image map (tolerant matching)
     for flower in flowers:
-        flower_key = _normalize(flower.get("name", ""))
-        image_url = None
-        for map_key, url in _IMAGE_MAP.items():
-            if not map_key:
-                continue
-            norm_map_key = _normalize(map_key)
-            # direct slug-like match
-            if flower_key and (flower_key == norm_map_key or flower_key in norm_map_key or norm_map_key in flower_key):
-                image_url = url
-                break
-            # try aliases
-            for alias in flower.get("aliases", set()):
-                if not alias:
-                    continue
-                if norm_map_key == _normalize(alias) or norm_map_key in _normalize(alias) or _normalize(alias) in norm_map_key:
-                    image_url = url
-                    break
-            if image_url:
-                break
-
-        flower["image_url"] = image_url
+        flower["image_url"] = _resolve_flower_image_url(flower)
 
     return flowers
 
@@ -1439,6 +1456,91 @@ def model_info() -> dict:
         "svd_components": 0 if svd is None else int(svd.n_components),
     }
 
+
+def _metadata_richness(flower: dict) -> tuple[int, int]:
+    rich_count = sum(
+        len(flower[field])
+        for field in ("colors", "plant_types", "maintenance", "meanings", "occasions")
+    )
+    passage_count = len(flower.get("passages", []))
+    return rich_count, passage_count
+
+
+def _normalize_visualizer_positions(vectors: np.ndarray) -> np.ndarray:
+    """
+    Map latent vectors into a stable [-1, 1] cube for frontend layout.
+    """
+    array = np.asarray(vectors, dtype=np.float32)
+    if array.ndim != 2 or array.shape[0] == 0:
+        return np.zeros((0, 3), dtype=np.float32)
+
+    dims = min(3, array.shape[1])
+    trimmed = array[:, :dims]
+    if dims < 3:
+        trimmed = np.pad(trimmed, ((0, 0), (0, 3 - dims)), mode="constant")
+
+    max_abs = np.max(np.abs(trimmed), axis=0)
+    max_abs[max_abs < 1e-6] = 1.0
+    return trimmed / max_abs
+
+
+def visualizer_flowers(limit: int = 48) -> dict:
+    """
+    Return a lightweight flower graph dataset for the 3D visualizer.
+    Uses the learned SVD latent vectors for base positions.
+    """
+    flowers, _, _, _, _, _, lsa_matrix, component_labels = _load_model()
+    if lsa_matrix is None or len(flowers) == 0:
+        return {"flowers": []}
+
+    ranked_indices = sorted(
+        range(len(flowers)),
+        key=lambda index: (
+            _metadata_richness(flowers[index])[0],
+            _metadata_richness(flowers[index])[1],
+            flowers[index]["name"].lower(),
+        ),
+        reverse=True,
+    )
+    chosen_indices = ranked_indices[: max(1, min(limit, len(ranked_indices)))]
+    chosen_vectors = np.asarray([lsa_matrix[index] for index in chosen_indices], dtype=np.float32)
+    normalized_positions = _normalize_visualizer_positions(chosen_vectors)
+
+    dataset = []
+    for output_index, flower_index in enumerate(chosen_indices):
+        flower = flowers[flower_index]
+        axis_info = select_latent_axes(lsa_matrix[flower_index], component_labels)
+        primary_color = flower["colors"][0] if flower["colors"] else "neutral"
+        primary_meaning = flower["meanings"][0] if flower["meanings"] else "general"
+        primary_occasion = flower["occasions"][0] if flower["occasions"] else "everyday"
+        x, y, z = normalized_positions[output_index]
+
+        dataset.append(
+            {
+                "id": _normalize(flower["name"]).replace(" ", "-"),
+                "name": flower["name"],
+                "scientific_name": flower["scientific_name"],
+                "colors": flower["colors"],
+                "plant_types": flower["plant_types"],
+                "maintenance": flower["maintenance"],
+                "meanings": flower["meanings"],
+                "occasions": flower["occasions"],
+                "primary_color": primary_color,
+                "primary_meaning": primary_meaning,
+                "primary_occasion": primary_occasion,
+                "latent_axes": [] if axis_info is None else axis_info["axis_labels"],
+                "latent_position": {
+                    "x": round(float(x), 4),
+                    "y": round(float(y), 4),
+                    "z": round(float(z), 4),
+                },
+                "image_url": flower.get("image_url"),
+                "summary": _build_structured_passages(flower)[:3],
+            }
+        )
+
+    return {"flowers": dataset}
+
 # FINALLY, HOLY MOOOLLLYY, turn the ranked flower docs into a frontend response format
 def _build_suggestion(
     flower: dict,
@@ -1537,6 +1639,9 @@ def get_flower_vectors(scientific_names: list[str]) -> dict:
                 "scientific_name": flowers[i]["scientific_name"],
                 "meanings": flowers[i]["meanings"],
                 "colors": flowers[i]["colors"],
+                "maintenance": flowers[i]["maintenance"],
+                "plant_types": flowers[i]["plant_types"],
+                "occasions": flowers[i]["occasions"],
                 "lsa_vector": lsa_matrix[i],
             })
     

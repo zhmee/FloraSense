@@ -1,8 +1,17 @@
 /* AppShell.css */
 
 .fs-shell {
+  --fs-nav-top: clamp(10px, 2vw, 18px);
+  --fs-nav-height: 68px;
+  --fs-nav-gap: 18px;
+  --fs-nav-clearance: calc(var(--fs-nav-top) + var(--fs-nav-height) + var(--fs-nav-gap));
   min-height: 100vh;
   background: #f0e6d5;
+}
+
+.fs-shell__hero {
+  position: relative;
+  z-index: 1;
 }
 
 /*
@@ -28,9 +37,107 @@
   scroll-margin-top: 104px;
 }
 
-/* Smooth view transitions */
-.fs-shell__content > div {
+.fs-shell__panel {
   position: relative;
   z-index: 1;
   transition: opacity 0.2s ease;
+}
+
+.fs-shell__panel--inactive {
+  display: none;
+}
+
+.fs-shell__panel--active {
+  display: block;
+}
+
+.fs-shell--visualizer {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(255, 248, 239, 0.82), rgba(255, 248, 239, 0) 34%),
+    linear-gradient(180deg, #f7ede0 0%, #ecdeca 100%);
+}
+
+.fs-shell--visualizer .fs-shell__content {
+  margin-top: 0;
+  min-height: 100vh;
+}
+
+.fs-shell--visualizer .fs-shell__panel--visualizer {
+  min-height: 100vh;
+}
+
+.fs-shell--visualizer .viz-shell {
+  width: 100vw;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: var(--fs-nav-clearance) 0 0;
+  gap: 0;
+}
+
+.fs-shell--visualizer .viz-header {
+  display: none;
+}
+
+.fs-shell--visualizer .viz-stage {
+  display: block;
+  min-height: calc(100vh - var(--fs-nav-clearance));
+  padding: 0;
+}
+
+.fs-shell--visualizer .viz-canvas {
+  min-height: calc(100vh - var(--fs-nav-clearance));
+  height: calc(100vh - var(--fs-nav-clearance));
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  box-shadow: none;
+}
+
+.fs-shell--visualizer .viz-sidebar {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 4;
+  width: min(360px, calc(100vw - 36px));
+  max-height: calc(100% - 36px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.fs-shell--visualizer .viz-grid-section {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .fs-shell {
+    --fs-nav-height: 62px;
+    --fs-nav-gap: 12px;
+  }
+
+  .fs-shell--visualizer .viz-shell {
+    padding-top: calc(var(--fs-nav-clearance) - 2px);
+  }
+
+  .fs-shell--visualizer .viz-stage {
+    min-height: calc(100vh - var(--fs-nav-clearance));
+    padding: 0;
+  }
+
+  .fs-shell--visualizer .viz-canvas {
+    min-height: calc(100vh - var(--fs-nav-clearance));
+    height: calc(100vh - var(--fs-nav-clearance));
+  }
+
+  .fs-shell--visualizer .viz-sidebar {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: min(44vh, 420px);
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 }

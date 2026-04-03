@@ -1,6 +1,6 @@
 /**
  * StickyNav — appears once user scrolls past hero section.
- * Provides tab switching between Ranker and 3D Visualizer.
+ * Provides tab switching between Ranker and the 3D visualizer.
  */
 import { useEffect, useRef } from 'react'
 import { animate } from 'animejs'
@@ -56,8 +56,17 @@ function StickyNav({ visible, activeView, onViewChange }: StickyNavProps): JSX.E
             className={`fs-nav__tab ${activeView === 'ranker' ? 'fs-nav__tab--active' : ''}`}
             onClick={() => onViewChange('ranker')}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M2 13h2V6H2v7zm3-5h2V3H5v5zm3 3h2V8H8v3zm3-6h2v6h-2V5z" fill="currentColor"/>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <rect x="2.25" y="9.5" width="2.5" height="5.25" rx="1.1" fill="currentColor" />
+              <rect x="7.1" y="6.25" width="2.5" height="8.5" rx="1.1" fill="currentColor" opacity="0.92" />
+              <rect x="11.95" y="3.25" width="2.5" height="11.5" rx="1.1" fill="currentColor" opacity="0.82" />
+              <path
+                d="M2.7 5.9C4.1 5.2 5.15 4.85 6.05 4.85C7.2 4.85 7.8 5.7 8.9 5.7C10.15 5.7 11.05 4.1 13.65 3.55"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
             Ranker
           </button>
@@ -67,13 +76,15 @@ function StickyNav({ visible, activeView, onViewChange }: StickyNavProps): JSX.E
             className={`fs-nav__tab ${activeView === 'visualizer' ? 'fs-nav__tab--active' : ''}`}
             onClick={() => onViewChange('visualizer')}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="3" fill="currentColor" opacity="0.9"/>
-              <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.1"/>
-              <line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" strokeWidth="1.2"/>
-              <line x1="8" y1="12.5" x2="8" y2="14.5" stroke="currentColor" strokeWidth="1.2"/>
-              <line x1="1.5" y1="8" x2="3.5" y2="8" stroke="currentColor" strokeWidth="1.2"/>
-              <line x1="12.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.2"/>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path
+                d="M9 2.4L14.5 5.55V12.45L9 15.6L3.5 12.45V5.55L9 2.4Z"
+                stroke="currentColor"
+                strokeWidth="1.35"
+                strokeLinejoin="round"
+              />
+              <path d="M9 2.4V9M14.5 5.55L9 9L3.5 5.55" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+              <circle cx="9" cy="9" r="1.55" fill="currentColor" />
             </svg>
             3D Visualizer
           </button>

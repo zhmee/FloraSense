@@ -5,6 +5,10 @@ To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
 import json
 import os
+from functools import lru_cache
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+from pathlib import Path
 from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
 
@@ -13,7 +17,7 @@ from models import db, Episode, Review
 #from flower_recommender_prototype import recommend_flowers     # SVD v1 - Elise
 #from flower_recommender_prototype2 import recommend_flowers    # v1 w/ RAKE - Michelle (Need to change requirements.txt)
 
-from flower_recommender_prototype3 import recommend_flowers     # SVD 3 - Kaustav (*FOR P03 DEPLOYMENT*)
+from flower_recommender_prototype3 import recommend_flowers, visualizer_flowers     # SVD 3 - Kaustav (*FOR P03 DEPLOYMENT*)
 #from flower_recommender_v3 import recommend_flowers            # SVD v3 - Elise (playtesting)
 
 from flower_autocomplete import autocomplete_queries            # Autocomplete
@@ -22,6 +26,9 @@ from flower_autocomplete import autocomplete_queries            # Autocomplete
 USE_LLM = False
 # USE_LLM = True
 # ─────────────────────────────────────────────────────────────────────────────
+
+VISUALIZATION_DIR = Path(__file__).resolve().parent / "3d_visualization"
+FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
 
 
 def json_search(query):
@@ -40,6 +47,30 @@ def json_search(query):
             'imdb_rating': review.imdb_rating
         })
     return matches
+
+
+def _load_python_source(module_name, source_path):
+    loader = SourceFileLoader(module_name, str(source_path))
+    spec = spec_from_loader(module_name, loader)
+    if spec is None:
+        raise ImportError(f"Could not load module spec for {source_path}")
+    module = module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+@lru_cache(maxsize=1)
+def _load_visualizer_insight_modules():
+    return {
+        "health": _load_python_source(
+            "visualizer_health_bar_calculation",
+            VISUALIZATION_DIR / "health_bar_calculation",
+        ),
+        "recommendations": _load_python_source(
+            "visualizer_recommendation_calculation",
+            VISUALIZATION_DIR / "recommendation_calculation",
+        ),
+    }
 
 
 def register_routes(app):
@@ -64,6 +95,43 @@ def register_routes(app):
     def recommendations():
         query = request.args.get("q", "")
         return jsonify(recommend_flowers(query))
+
+    @app.route("/api/visualizer-flowers")
+    def visualizer():
+        limit = request.args.get("limit", default=48, type=int)
+        return jsonify(visualizer_flowers(limit=limit))
+
+    @app.route("/api/flower-images/<path:filename>")
+    def flower_image(filename):
+        return send_from_directory(FLOWER_IMAGE_DIR, filename)
+
+    @app.route("/api/visualizer-bouquet-insights", methods=["POST"])
+    def visualizer_bouquet_insights():
+        payload = request.get_json(silent=True) or {}
+        scientific_names = payload.get("scientific_names", [])
+        if not isinstance(scientific_names, list):
+            return jsonify({"error": "scientific_names must be a list."}), 400
+
+        cleaned_names = [
+            scientific_name.strip()
+            for scientific_name in scientific_names
+            if isinstance(scientific_name, str) and scientific_name.strip()
+        ]
+        if not cleaned_names:
+            return jsonify({
+                "scientific_names": [],
+                "meanings": [],
+                "recommendations": [],
+            })
+
+        modules = _load_visualizer_insight_modules()
+        meanings_payload = modules["health"].get_bouquet_meanings(cleaned_names)
+        recommendations_payload = modules["recommendations"].get_bouquet_recommendations(cleaned_names)
+        return jsonify({
+            "scientific_names": cleaned_names,
+            "meanings": meanings_payload.get("meanings", []),
+            "recommendations": recommendations_payload.get("recommendations", []),
+        })
 
     @app.route("/api/autocomplete")
     def autocomplete():

@@ -11,6 +11,7 @@ import './AppShell.css'
 function AppShell(): JSX.Element {
   const [activeView, setActiveView] = useState<ActiveView>('ranker')
   const contentRef = useRef<HTMLDivElement>(null)
+  const isVisualizerView = activeView === 'visualizer'
 
   const scrollToContent = useCallback(() => {
     contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -19,34 +20,42 @@ function AppShell(): JSX.Element {
   const handleViewChange = useCallback((view: ActiveView) => {
     setActiveView(view)
     window.setTimeout(() => {
+      if (view === 'visualizer') {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
       contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 60)
   }, [])
 
   return (
-    <div className="fs-shell">
-      {/* 1. Hero */}
-      <div>
-        <HeroSection onScrollDown={scrollToContent} />
-      </div>
+    <div className={`fs-shell ${isVisualizerView ? 'fs-shell--visualizer' : 'fs-shell--ranker'}`}>
+      {!isVisualizerView ? (
+        <div className="fs-shell__hero">
+          <HeroSection onScrollDown={scrollToContent} />
+        </div>
+      ) : null}
 
-      {/* 2. Sticky nav */}
       <StickyNav
         visible
         activeView={activeView}
         onViewChange={handleViewChange}
       />
 
-      {/* 3. Content — nav-offset spacer only appears when nav is sticky */}
       <div
         ref={contentRef}
         className="fs-shell__content"
       >
-        {/* Render both, hide inactive to preserve existing App state */}
-        <div style={{ display: activeView === 'ranker' ? 'block' : 'none' }}>
+        <div
+          className={`fs-shell__panel fs-shell__panel--ranker ${activeView === 'ranker' ? 'fs-shell__panel--active' : 'fs-shell__panel--inactive'}`}
+          aria-hidden={activeView !== 'ranker'}
+        >
           <App />
         </div>
-        <div style={{ display: activeView === 'visualizer' ? 'block' : 'none' }}>
+        <div
+          className={`fs-shell__panel fs-shell__panel--visualizer ${activeView === 'visualizer' ? 'fs-shell__panel--active' : 'fs-shell__panel--inactive'}`}
+          aria-hidden={activeView !== 'visualizer'}
+        >
           <Visualizer3D />
         </div>
       </div>
