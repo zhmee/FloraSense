@@ -363,7 +363,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
       })
 
       animate('.score-fill', {
-        scaleX: (target: Target) => Number((target as HTMLElement).dataset.strength ?? '0'),
+        scaleX: (target: Target) => [0, Number((target as HTMLElement).dataset.strength ?? '0')],
         delay: stagger(scope.matches.compact ? 90 : 130, { start: scope.matches.compact ? 120 : 180 }),
         duration: scope.matches.compact ? 680 : 900,
         ease: 'out(5)',
@@ -855,7 +855,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                         <div
                           className="score-fill"
                           data-strength={strength.toFixed(3)}
-                          style={{ transform: 'scaleX(0)' }}
+                          style={{ transform: `scaleX(${strength.toFixed(3)})` }}
                         />
                       </div>
                       <div className="score-caption">
