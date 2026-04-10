@@ -5,9 +5,8 @@ This file builds one text document for each flower, turns those documents into
 numeric vectors, reduces them with SVD, and then finds the flowers whose vectors
 are closest to the user's query.
 
-`merged.csv` is only used to add more descriptive text to each flower document.
-It is not used as a direct lookup table and it does not add hand-written scoring
-rules at query time.
+`merged.csv` is the primary source of flower records. Scraped flower pages are
+used only to add article text when they can be matched to a cleaned CSV flower.
 """
 
 from __future__ import annotations
@@ -41,14 +40,20 @@ except Exception:
     _IMAGE_MAP = {}
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
-try:
-    _LOCAL_IMAGE_FILES = {
-        re.sub(r"[^a-z0-9\s]+", " ", path.stem.lower()).strip(): path.name
-        for path in FLOWER_IMAGE_DIR.iterdir()
-        if path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
-    }
-except Exception:
-    _LOCAL_IMAGE_FILES = {}
+_IMAGE_ALIAS_TARGETS = {
+    "arum lily": "calla lily",
+    "pelargonium": "geranium",
+    "zantedeschia": "calla lily",
+}
+_IMAGE_GENERIC_TOKENS = {"flower", "flowers", "meaning", "meanings"}
+_COLOR_FALLBACK_IMAGE_FILENAMES = {
+    "blue": "blue-flowers-meaning.jpg",
+    "pink": "pink-flowers-meaning.jpg",
+    "purple": "purple-flowers-meaning.jpg",
+    "white": "white-flowers.jpg",
+    "yellow": "yellow-flowers-meaning.jpg",
+}
+_GENERIC_FLOWER_IMAGE_FILENAME = "10-most-beautiful-flowers.jpg"
 
 # configuration values for the model and for the returned UI payload.
 MAX_SVD_COMPONENTS = 96
@@ -106,6 +111,39 @@ def _normalize(text: str) -> str:
     lowercase, no punctuation, spaces kept.
     """
     return re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
+
+
+def _normalize_image_key(text: str) -> str:
+    """
+    Normalize image slugs with a small typo fix for scraped filenames.
+    """
+    return _normalize(text).replace("lilly", "lily")
+
+
+def _is_thematic_slug(slug: str) -> bool:
+    return slug.endswith("flowers") or slug.startswith(THEMATIC_PREFIXES)
+
+
+def _load_local_image_index(include_thematic: bool = True) -> tuple[dict[str, str], set[str]]:
+    try:
+        image_map: dict[str, str] = {}
+        filenames: set[str] = set()
+        for path in FLOWER_IMAGE_DIR.iterdir():
+            if not path.is_file() or path.suffix.lower() not in _IMAGE_EXTENSIONS:
+                continue
+            if not include_thematic and _is_thematic_slug(path.stem):
+                continue
+            normalized_key = _normalize_image_key(path.stem)
+            if normalized_key:
+                image_map[normalized_key] = path.name
+            filenames.add(path.name)
+        return image_map, filenames
+    except Exception:
+        return {}, set()
+
+
+_LOCAL_IMAGE_FILES, _LOCAL_IMAGE_FILENAMES = _load_local_image_index(include_thematic=True)
+_LOCAL_FLOWER_IMAGE_FILES, _ = _load_local_image_index(include_thematic=False)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -329,28 +367,96 @@ def _alias_variants(name: str) -> set[str]:
 
 def _matching_image_candidates(flower: dict) -> list[tuple[str, str]]:
     candidates = []
-    flower_key = _normalize(flower.get("name", ""))
+    flower_key = _normalize_image_key(flower.get("name", ""))
     if flower_key:
         candidates.append(("name", flower_key))
     for alias in flower.get("aliases", set()):
-        normalized_alias = _normalize(alias)
+        normalized_alias = _normalize_image_key(alias)
         if normalized_alias:
             candidates.append(("alias", normalized_alias))
     return candidates
 
 
+def _image_match_score(candidate: str, local_key: str) -> int:
+    candidate_tokens = [token for token in _tokenize(candidate) if token not in _IMAGE_GENERIC_TOKENS]
+    local_tokens = [token for token in _tokenize(local_key) if token not in _IMAGE_GENERIC_TOKENS]
+    if not candidate_tokens or not local_tokens:
+        return -1
+
+    candidate_token_set = set(candidate_tokens)
+    local_token_set = set(local_tokens)
+    overlap = candidate_token_set & local_token_set
+    if not overlap:
+        return -1
+
+    score = len(overlap) * 10
+    if local_key.startswith(candidate):
+        score += 20
+    elif candidate.startswith(local_key):
+        score += 12
+    elif candidate in local_key or local_key in candidate:
+        score += 6
+
+    if candidate_token_set <= local_token_set:
+        score += 16 - max(0, len(local_token_set) - len(candidate_token_set))
+    elif local_token_set <= candidate_token_set:
+        score += 12 - max(0, len(candidate_token_set) - len(local_token_set))
+
+    return score
+
+
+def _best_local_image_filename(candidate: str) -> str | None:
+    normalized_candidate = _normalize_image_key(candidate)
+    if not normalized_candidate:
+        return None
+
+    candidates = [normalized_candidate]
+    alias_target = _IMAGE_ALIAS_TARGETS.get(normalized_candidate)
+    if alias_target:
+        candidates.append(_normalize_image_key(alias_target))
+
+    for current_candidate in candidates:
+        direct_match = _LOCAL_FLOWER_IMAGE_FILES.get(current_candidate)
+        if direct_match:
+            return direct_match
+
+    best_score = -1
+    best_filename = None
+    for current_candidate in candidates:
+        for local_key, filename in _LOCAL_FLOWER_IMAGE_FILES.items():
+            score = _image_match_score(current_candidate, local_key)
+            if score > best_score:
+                best_score = score
+                best_filename = filename
+
+    return best_filename if best_score >= 20 else None
+
+
+def _fallback_image_url_from_metadata(flower: dict) -> str | None:
+    for color in flower.get("colors", []):
+        normalized_color = _normalize(color)
+        filename = _COLOR_FALLBACK_IMAGE_FILENAMES.get(normalized_color)
+        if filename in _LOCAL_IMAGE_FILENAMES:
+            return f"/api/flower-images/{filename}"
+
+    if _GENERIC_FLOWER_IMAGE_FILENAME in _LOCAL_IMAGE_FILENAMES:
+        return f"/api/flower-images/{_GENERIC_FLOWER_IMAGE_FILENAME}"
+
+    return None
+
+
 def _resolve_flower_image_url(flower: dict) -> str | None:
     for _, candidate in _matching_image_candidates(flower):
-        for local_key, filename in _LOCAL_IMAGE_FILES.items():
-            if candidate == local_key or candidate in local_key or local_key in candidate:
-                return f"/api/flower-images/{filename}"
+        filename = _best_local_image_filename(candidate)
+        if filename:
+            return f"/api/flower-images/{filename}"
 
         for remote_key, remote_url in _IMAGE_MAP.items():
-            normalized_remote_key = _normalize(remote_key)
+            normalized_remote_key = _normalize_image_key(remote_key)
             if candidate == normalized_remote_key or candidate in normalized_remote_key or normalized_remote_key in candidate:
                 return remote_url
 
-    return None
+    return _fallback_image_url_from_metadata(flower)
 
 
 def _join_human(values: list[str]) -> str:
@@ -401,14 +507,50 @@ def _new_flower_doc(name: str, scientific_name: str = "Unknown") -> dict:
     }
 
 
+def _load_scraped_docs() -> dict[str, dict]:
+    """
+    Load one base flower document per non-thematic scraped text file.
+    """
+    docs_by_key: dict[str, dict] = {}
+
+    for path in sorted(TEXT_CORPUS_DIR.glob("*.txt")):
+        if _is_thematic_file(path):
+            # skip broad topic pages
+            continue
+
+        raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
+        if not raw_text:
+            # skip empty files
+            continue
+
+        display_name = _slug_to_display_name(path.stem)
+        doc = _new_flower_doc(display_name)
+        title = _extract_title(raw_text, display_name)
+        # keep the page title as another possible name for matching
+        doc["aliases"].add(_normalize(title))
+        doc["article_passages"].extend(_split_passages(raw_text))
+        docs_by_key[doc["key"]] = doc
+
+    return docs_by_key
+
+
 # BASICALLY, ALL THIS IS JUST TO MATCH THE DIFF DATA SOURCES TO THE SAME FLOWER TO BUILD THE FLOWER DOCUMENTS
-def _best_matching_key(name: str, scientific_name: str, docs_by_key: dict[str, dict]) -> str | None:
+def _best_matching_key(
+    name: str,
+    scientific_name: str,
+    docs_by_key: dict[str, dict],
+    extra_candidates: set[str] | None = None,
+) -> str | None:
     """
     Find which existing flower document best matches a CSV row.
     This is needed because the article files and the CSV are not always named
     in exactly the same way (which really pmo man I was wondering what was going on for so long).
     """
     candidate_texts = [text for text in (_normalize(name), _normalize(scientific_name)) if text]
+    for candidate in extra_candidates or set():
+        normalized_candidate = _normalize(candidate)
+        if normalized_candidate and normalized_candidate not in candidate_texts:
+            candidate_texts.append(normalized_candidate)
     if not candidate_texts:
         return None
 
@@ -468,6 +610,16 @@ def _merge_structured_record(doc: dict, record: dict) -> None:
     doc["aliases"].update(_alias_variants(record["name"]))
     if record["scientific_name"] != "Unknown":
         doc["aliases"].add(_normalize(record["scientific_name"]))
+
+
+def _merge_scraped_record(doc: dict, scraped_doc: dict) -> None:
+    """
+    Add scraped article text into an existing flower document when available.
+    """
+    doc["aliases"].update(scraped_doc["aliases"])
+    doc["article_passages"] = _dedupe_preserve_order(
+        doc["article_passages"] + scraped_doc["article_passages"]
+    )
 
 
 def _build_structured_passages(flower: dict) -> list[str]:
@@ -1225,41 +1377,32 @@ def _is_thematic_file(path: Path) -> bool:
     Return True if a file looks like a category/topic page rather than
     a page about one specific flower.
     """
-    slug = path.stem
-    return slug.endswith("flowers") or slug.startswith(THEMATIC_PREFIXES)
+    return _is_thematic_slug(path.stem)
 
 
 def _build_corpus_docs() -> list[dict]:
     """
-    Build the flower documents from scraped text files, then enrich them
-    with matching CSV metadata.
+    Build the flower documents from cleaned CSV records, then attach scraped
+    article text when a flower page can be matched back to that CSV flower.
     """
     docs_by_key: dict[str, dict] = {}
 
-    for path in sorted(TEXT_CORPUS_DIR.glob("*.txt")):
-        if _is_thematic_file(path):
-            # skip broad topic pages
-            continue
-
-        # treat non-thematic files as flower-specific pages
-        raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
-        if not raw_text:
-            # skip empty files (duh)
-            continue
-
-        display_name = _slug_to_display_name(path.stem)
-        doc = _new_flower_doc(display_name)
-        title = _extract_title(raw_text, display_name)
-        # save page title as another alias for matching
-        doc["aliases"].add(_normalize(title))
-        doc["article_passages"].extend(_split_passages(raw_text))
+    for record in _load_csv_records():
+        doc = _new_flower_doc(record["name"], record["scientific_name"])
+        _merge_structured_record(doc, record)
         docs_by_key[doc["key"]] = doc
 
-    for record in _load_csv_records():
-        # merge only when we can match the CSV record to a known flower page
-        key = _best_matching_key(record["name"], record["scientific_name"], docs_by_key)
-        if key is not None:
-            _merge_structured_record(docs_by_key[key], record)
+    scraped_docs_by_key = _load_scraped_docs()
+    for scraped_doc in scraped_docs_by_key.values():
+        key = _best_matching_key(
+            scraped_doc["name"],
+            scraped_doc["scientific_name"],
+            docs_by_key,
+            extra_candidates=scraped_doc["aliases"],
+        )
+        if key is None:
+            continue
+        _merge_scraped_record(docs_by_key[key], scraped_doc)
 
     flowers = []
     for flower in sorted(docs_by_key.values(), key=lambda item: item["name"].lower()):
