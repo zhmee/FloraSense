@@ -1,5 +1,6 @@
 import { animate, stagger } from 'animejs'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { formatFlowerDisplayName } from './flowerDisplay'
 import type { BouquetInsightsResponse, VisualizerFlower, VisualizerFlowersResponse } from './types'
 import './Visualizer3D.css'
 
@@ -1242,7 +1243,7 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
       if (focusNode) {
         const projected = projectNode(focusNode, camera)
         const labelY = projected.y + projected.radius * 1.22
-        paintNodeLabel(ctx, focusNode.data.name, projected.x, labelY, s.zoom)
+        paintNodeLabel(ctx, formatFlowerDisplayName(focusNode.data.name), projected.x, labelY, s.zoom)
       }
 
       paintGlassOverlay(ctx, s.W, s.H)
@@ -1594,47 +1595,50 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
                 <p>{bouquetInsightsError ?? 'Bouquet recommendations failed to load.'}</p>
               ) : atlasRecommendations.length > 0 ? (
                 <div ref={recommendationListRef} className="viz-recommendation-list">
-                  {atlasRecommendations.map(({ recommendation, atlasFlower }) => (
-                    <div key={recommendation.scientific_name} className="viz-recommendation-card">
-                      <div className="viz-recommendation-card__head">
-                        <div className="viz-recommendation-card__identity">
-                          {recommendation.image_url ? (
-                            <img
-                              className="viz-recommendation-card__thumb"
-                              src={recommendation.image_url}
-                              alt={recommendation.name}
-                            />
-                          ) : null}
-                          <div>
-                            <strong>{recommendation.name}</strong>
-                            <span>{recommendation.scientific_name}</span>
+                  {atlasRecommendations.map(({ recommendation, atlasFlower }) => {
+                    const displayName = formatFlowerDisplayName(recommendation.name)
+                    return (
+                      <div key={recommendation.scientific_name} className="viz-recommendation-card">
+                        <div className="viz-recommendation-card__head">
+                          <div className="viz-recommendation-card__identity">
+                            {recommendation.image_url ? (
+                              <img
+                                className="viz-recommendation-card__thumb"
+                                src={recommendation.image_url}
+                                alt={displayName}
+                              />
+                            ) : null}
+                            <div>
+                              <strong>{displayName}</strong>
+                              <span>{recommendation.scientific_name}</span>
+                            </div>
                           </div>
+                          <em>{toScoreLabel(recommendation.score)}</em>
                         </div>
-                        <em>{toScoreLabel(recommendation.score)}</em>
+                        <div className="viz-chip-list">
+                          {recommendation.matched_keywords.slice(0, 3).map(term => (
+                            <span key={`${recommendation.scientific_name}-${term.keyword}`} className="viz-chip">
+                              {term.keyword}
+                            </span>
+                          ))}
+                        </div>
+                        <p>
+                          {atlasFlower
+                            ? 'Already loaded in the 3D Visualizer.'
+                            : 'Recommended from the full corpus and not currently rendered in this 3D Visualizer view.'}
+                        </p>
+                        {atlasFlower ? (
+                          <button
+                            type="button"
+                            className="viz-toolbar__button viz-toolbar__button--compact"
+                            onClick={() => handleFlowerSelect(atlasFlower.id)}
+                          >
+                            Focus in 3D Visualizer
+                          </button>
+                        ) : null}
                       </div>
-                      <div className="viz-chip-list">
-                        {recommendation.matched_keywords.slice(0, 3).map(term => (
-                          <span key={`${recommendation.scientific_name}-${term.keyword}`} className="viz-chip">
-                            {term.keyword}
-                          </span>
-                        ))}
-                      </div>
-                      <p>
-                        {atlasFlower
-                          ? 'Already loaded in the 3D Visualizer.'
-                          : 'Recommended from the full corpus and not currently rendered in this 3D Visualizer view.'}
-                      </p>
-                      {atlasFlower ? (
-                        <button
-                          type="button"
-                          className="viz-toolbar__button viz-toolbar__button--compact"
-                          onClick={() => handleFlowerSelect(atlasFlower.id)}
-                        >
-                          Focus in 3D Visualizer
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <p>No additional flowers were recommended for this neighborhood.</p>

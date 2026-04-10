@@ -7,6 +7,7 @@ import FlowerCoral from './assets/flower-coral.svg'
 import FlowerGold from './assets/flower-gold.svg'
 import FlowerOlive from './assets/flower-olive.svg'
 import FlowerRose from './assets/flower-rose.svg'
+import { formatFlowerDisplayName } from './flowerDisplay'
 import { AutocompleteResponse, KeywordUsed, RecommendationResponse } from './types'
 
 const EMPTY_RESULTS: RecommendationResponse = {
@@ -817,6 +818,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const strength = getMatchStrength(suggestion.score, topScore)
                 const strengthLabel = Math.round(strength * 100)
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
+                const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
                 const fullOccasionText = formatLongText(suggestion.occasions)
                 const meaningIsExpandable = fullMeaningText !== 'Not listed' && fullMeaningText.length > 220
@@ -835,7 +837,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           <img
                             className="suggestion-image"
                             src={suggestion.image_url}
-                            alt={suggestion.name}
+                            alt={displayName}
                           />
                         </div>
                       )}
@@ -843,7 +845,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
 
                     <div className="card-overview">
                       <div className="card-header">
-                        <h2>{suggestion.name}</h2>
+                        <h2>{displayName}</h2>
                         <p>{suggestion.scientific_name}</p>
                       </div>
                     </div>
@@ -892,7 +894,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           </div>
                           <img
                             src={suggestion.latent_radar_chart}
-                            alt={`latent svd radar chart for ${suggestion.name.toLowerCase()}. axes: ${suggestion.latent_radar_axes.join(', ')}`}
+                            alt={`latent svd radar chart for ${displayName.toLowerCase()}. axes: ${suggestion.latent_radar_axes.join(', ')}`}
                           />
                           <figcaption>flower-only latent profile</figcaption>
                         </figure>
