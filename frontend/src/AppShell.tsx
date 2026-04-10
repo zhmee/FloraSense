@@ -50,13 +50,13 @@ function AppShell(): JSX.Element {
           className={`fs-shell__panel fs-shell__panel--ranker ${activeView === 'ranker' ? 'fs-shell__panel--active' : 'fs-shell__panel--inactive'}`}
           aria-hidden={activeView !== 'ranker'}
         >
-          <App />
+          <App isActive={activeView === 'ranker'} />
         </div>
         <div
           className={`fs-shell__panel fs-shell__panel--visualizer ${activeView === 'visualizer' ? 'fs-shell__panel--active' : 'fs-shell__panel--inactive'}`}
           aria-hidden={activeView !== 'visualizer'}
         >
-          <Visualizer3D />
+          <Visualizer3D isActive={activeView === 'visualizer'} />
         </div>
       </div>
     </div>

@@ -54,6 +54,7 @@ _COLOR_FALLBACK_IMAGE_FILENAMES = {
     "yellow": "yellow-flowers-meaning.jpg",
 }
 _GENERIC_FLOWER_IMAGE_FILENAME = "10-most-beautiful-flowers.jpg"
+ENABLE_QUERY_LATENT_DEBUG = False
 
 # configuration values for the model and for the returned UI payload.
 MAX_SVD_COMPONENTS = 96
@@ -1846,12 +1847,13 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
             svd,
             word_vectorizer,
         )
-        _print_query_latent_dimensions(
-            query,
-            query_lsa[0],
-            query_axis_indices,
-            query_axis_labels,
-        )
+        if ENABLE_QUERY_LATENT_DEBUG:
+            _print_query_latent_dimensions(
+                query,
+                query_lsa[0],
+                query_axis_indices,
+                query_axis_labels,
+            )
         query_radar_chart = build_latent_radar_chart(
             query_lsa[0],
             component_labels,

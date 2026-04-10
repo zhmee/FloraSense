@@ -54,6 +54,10 @@ const DECORATIVE_FLOWERS: DecorativeFlower[] = [
   { top: '87%', right: '20%', size: 72, depth: 0.85, hue: 'olive', image: FlowerOlive },
 ]
 
+interface AppProps {
+  isActive?: boolean
+}
+
 function formatLabel(values: string[] | undefined): string {
   if (!values || values.length === 0) return 'Not listed'
   return values.join(', ')
@@ -250,7 +254,7 @@ function getQueryBreakdownKeywords(results: RecommendationResponse): KeywordUsed
   return normalizedKeywords.slice(0, 10)
 }
 
-function App(): JSX.Element {
+function App({ isActive = true }: AppProps): JSX.Element {
   const [query, setQuery] = useState<string>('')
   const [isQueryFocused, setIsQueryFocused] = useState<boolean>(false)
   const [animatedQueryText, setAnimatedQueryText] = useState<string>('')
@@ -274,7 +278,7 @@ function App(): JSX.Element {
 
   const queryBreakdownKeywords = getQueryBreakdownKeywords(results)
   const topScore = results.suggestions[0]?.score ?? 0
-  const showAnimatedQuery = !query && !isQueryFocused
+  const showAnimatedQuery = isActive && !query && !isQueryFocused
 
   useEffect(() => {
     if (!showAnimatedQuery) {
@@ -315,6 +319,13 @@ function App(): JSX.Element {
   }, [animatedQueryDeleting, animatedQueryIndex, animatedQueryText, showAnimatedQuery])
 
   useEffect(() => {
+    if (!isActive) {
+      loadingAnimationRef.current?.revert()
+      animationScopeRef.current?.revert()
+      animationScopeRef.current = null
+      return
+    }
+
     if (!appRef.current) return
 
     const scope = createScope({
@@ -458,7 +469,7 @@ function App(): JSX.Element {
       animationScopeRef.current?.revert()
       animationScopeRef.current = null
     }
-  }, [])
+  }, [isActive])
 
   useEffect(() => {
     const scope = animationScopeRef.current

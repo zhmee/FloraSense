@@ -76,6 +76,10 @@ interface ProjectedNode {
   visible: boolean
 }
 
+interface Visualizer3DProps {
+  isActive?: boolean
+}
+
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
 const COLOR_HEX_MAP: Record<string, string> = {
@@ -862,6 +866,7 @@ function fitProjectedViewport(
 // ─── Canvas Visualizer component ──────────────────────────────────────────────
 
 interface VisualizerCanvasProps {
+  isActive: boolean
   flowers: VisualizerFlower[]; semanticGraph: SemanticGraph; bouquets: Bouquet[]
   selectedFlowerId: string | null; selectedBouquetId: string | null
   viewportResetToken: number
@@ -870,7 +875,7 @@ interface VisualizerCanvasProps {
 }
 
 const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasProps) {
-  const { flowers, semanticGraph, bouquets, selectedFlowerId, selectedBouquetId, viewportResetToken, onFlowerSelect, onBouquetSelect, onSceneStatusChange } = props
+  const { isActive, flowers, semanticGraph, bouquets, selectedFlowerId, selectedBouquetId, viewportResetToken, onFlowerSelect, onBouquetSelect, onSceneStatusChange } = props
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -1019,6 +1024,8 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
   }, [selectedFlowerId])
 
   useEffect(() => {
+    if (!isActive) return
+
     const container = containerRef.current
     const canvas = canvasRef.current
     if (!container || !canvas) return
@@ -1262,7 +1269,7 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
       canvasEl.removeEventListener('pointerleave', onLeave)
       canvasEl.removeEventListener('wheel', onWheel)
     }
-  }, [bouquets, flowers, semanticGraph, recompute, centerViewport, focusSelectedFlower, focusSelectedNeighborhood, onFlowerSelect, onBouquetSelect, onSceneStatusChange, setOverviewViewport])
+  }, [isActive, bouquets, flowers, semanticGraph, recompute, centerViewport, focusSelectedFlower, focusSelectedNeighborhood, onFlowerSelect, onBouquetSelect, onSceneStatusChange, setOverviewViewport])
 
   return (
     <div ref={containerRef} className="viz-canvas__mount" style={{ position: 'absolute', inset: 0 }}>
@@ -1271,7 +1278,7 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
   )
 })
 
-function Visualizer3D(): JSX.Element {
+function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
   const [flowers, setFlowers] = useState<VisualizerFlower[]>([])
   const [selectedFlowerId, setSelectedFlowerId] = useState<string | null>(null)
   const [selectedBouquetId, setSelectedBouquetId] = useState<string | null>(null)
@@ -1289,6 +1296,8 @@ function Visualizer3D(): JSX.Element {
   const bouquetInsightsCacheRef = useRef(new Map<string, BouquetInsightsResponse>())
 
   useEffect(() => {
+    if (!isActive || flowers.length > 0) return
+
     let cancelled = false
     fetch('/api/visualizer-flowers?limit=96')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
@@ -1299,7 +1308,7 @@ function Visualizer3D(): JSX.Element {
         setSceneStatus('error'); setStatusMessage('Semantic bouquet data failed to load.')
       })
     return () => { cancelled = true }
-  }, [])
+  }, [flowers.length, isActive])
 
   const semanticGraph = useMemo(() => buildSemanticGraph(flowers), [flowers])
   const bouquets = useMemo(() => buildBouquets(flowers, semanticGraph), [flowers, semanticGraph])
@@ -1348,6 +1357,8 @@ function Visualizer3D(): JSX.Element {
   }, [bouquetInsights, flowersByScientificName])
 
   useEffect(() => {
+    if (!isActive) return
+
     if (!selectedBouquet || bouquetScientificNames.length === 0) {
       setBouquetInsights(null)
       setBouquetInsightsStatus('idle')
@@ -1393,9 +1404,11 @@ function Visualizer3D(): JSX.Element {
       })
 
     return () => { cancelled = true }
-  }, [selectedBouquet, bouquetScientificNames])
+  }, [selectedBouquet, bouquetScientificNames, isActive])
 
   useEffect(() => {
+    if (!isActive) return
+
     if (!flowers.length || introAnimatedRef.current) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       introAnimatedRef.current = true
@@ -1440,7 +1453,7 @@ function Visualizer3D(): JSX.Element {
     return () => {
       animations.forEach(animation => animation.revert())
     }
-  }, [flowers.length])
+  }, [flowers.length, isActive])
 
   useEffect(() => {
     if (bouquetInsightsStatus !== 'ready' || !bouquetInsights?.meanings.length) return
@@ -1500,7 +1513,7 @@ function Visualizer3D(): JSX.Element {
     return () => {
       animations.forEach(animation => animation.revert())
     }
-  }, [atlasRecommendations, bouquetInsightsStatus])
+  }, [atlasRecommendations, bouquetInsightsStatus, flowers.length, isActive])
 
   return (
     <section ref={shellRef} className="viz-shell">
@@ -1516,7 +1529,7 @@ function Visualizer3D(): JSX.Element {
       <div className={`viz-stage${showSidebar ? ' viz-stage--focused' : ''}`}>
         <div className="viz-canvas">
           {flowers.length > 0 && bouquets.length > 0 && !loadError ? (
-            <VisualizerCanvas flowers={flowers} semanticGraph={semanticGraph} bouquets={bouquets}
+            <VisualizerCanvas isActive={isActive} flowers={flowers} semanticGraph={semanticGraph} bouquets={bouquets}
               selectedFlowerId={selectedFlowerId} selectedBouquetId={selectedBouquetId}
               viewportResetToken={viewportResetToken}
               onFlowerSelect={handleFlowerSelect} onBouquetSelect={handleBouquetSelect}
