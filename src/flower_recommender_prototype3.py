@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import re
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 import json
@@ -61,6 +62,7 @@ MAX_SVD_COMPONENTS = 96
 MAX_QUERY_KEYWORDS = 10
 MAX_MATCHED_KEYWORDS = 8
 MAX_HIGHLIGHTS = 3
+QUERY_AXIS_FALLBACK_ATTENUATION = 0.72
 GENERIC_EXPLANATION_TOKENS = {
     "express",
     "expresses",
@@ -306,6 +308,14 @@ def _split_passages(text: str) -> list[str]:
         if len(cleaned.split()) >= 6:
             passages.append(cleaned)
     return passages
+
+
+def _text_similarity(left: str, right: str) -> float:
+    left_normalized = _normalize(left)
+    right_normalized = _normalize(right)
+    if not left_normalized or not right_normalized:
+        return 0.0
+    return float(SequenceMatcher(None, left_normalized, right_normalized).ratio())
 
 
 def _extract_title(text: str, fallback: str) -> str:
@@ -788,16 +798,51 @@ def _merge_keyword_lists(term_groups: list[list[dict]], limit: int) -> list[dict
     non-redundant terms.
     """
     merged = []
-    selected_keywords: list[str] = []
 
     for group in term_groups:
         for term in group:
             keyword = term["keyword"]
-            if _is_generic_flower_term(keyword) or _is_redundant_keyword(keyword, selected_keywords):
+            if _is_generic_flower_term(keyword):
                 continue
 
-            selected_keywords.append(keyword)
-            merged.append(term)
+            keyword_tokens = set(_tokenize(keyword))
+            keyword_category = term.get("category")
+            if not keyword_tokens:
+                continue
+
+            replacement_indices = []
+            skip_term = False
+            for index, existing_term in enumerate(merged):
+                if existing_term.get("category") != keyword_category:
+                    continue
+
+                existing_keyword = existing_term["keyword"]
+                existing_tokens = set(_tokenize(existing_keyword))
+                if not existing_tokens:
+                    continue
+
+                if _normalize(existing_keyword) == _normalize(keyword) or keyword_tokens <= existing_tokens:
+                    skip_term = True
+                    break
+
+                if existing_tokens < keyword_tokens:
+                    replacement_indices.append(index)
+
+            if skip_term:
+                continue
+
+            selected_keywords = [
+                existing_term["keyword"]
+                for index, existing_term in enumerate(merged)
+                if index not in replacement_indices
+            ]
+            if _is_redundant_keyword(keyword, selected_keywords):
+                continue
+
+            insert_at = len(merged) if not replacement_indices else replacement_indices[0]
+            for index in reversed(replacement_indices):
+                merged.pop(index)
+            merged.insert(insert_at, term)
             if len(merged) >= limit:
                 return merged
 
@@ -939,6 +984,8 @@ def _extract_query_metadata_keywords(query: str, flowers: list[dict]) -> list[di
     normalized_query = _normalize(query)
     if not normalized_query:
         return []
+    query_tokens = normalized_query.split()
+    token_spans = [(match.group(0), match.start(), match.end()) for match in re.finditer(r"[a-z0-9]+", normalized_query)]
 
     category_values: dict[str, set[str]] = {
         "color": set(),
@@ -963,15 +1010,55 @@ def _extract_query_metadata_keywords(query: str, flowers: list[dict]) -> list[di
                             "score": round(10 + len(phrase.split()) / 10, 2),
                             "start": match.start(),
                             "end": match.end(),
+                            "is_exact": True,
                         }
                     )
+
+                phrase_tokens = phrase.split()
+                if not phrase_tokens or len(query_tokens) < len(phrase_tokens):
+                    continue
+
+                best_fuzzy_match = None
+                best_similarity = 0.0
+                for start_index in range(0, len(query_tokens) - len(phrase_tokens) + 1):
+                    end_index = start_index + len(phrase_tokens)
+                    window_text = " ".join(query_tokens[start_index:end_index])
+                    similarity = _text_similarity(window_text, phrase)
+                    if similarity <= best_similarity:
+                        continue
+                    best_similarity = similarity
+                    best_fuzzy_match = (start_index, end_index)
+
+                min_similarity = 0.84 if len(phrase_tokens) == 1 else 0.8
+                if best_fuzzy_match is None or best_similarity < min_similarity or best_similarity >= 0.999:
+                    continue
+
+                start_token_index, end_token_index = best_fuzzy_match
+                fuzzy_start = token_spans[start_token_index][1]
+                fuzzy_end = token_spans[end_token_index - 1][2]
+                candidates.append(
+                    {
+                        "keyword": display,
+                        "category": category,
+                        "score": round(9.4 + best_similarity + len(phrase_tokens) / 10, 2),
+                        "start": fuzzy_start,
+                        "end": fuzzy_end,
+                        "is_exact": False,
+                    }
+                )
 
     selected = []
     occupied_ranges: list[tuple[int, int]] = []
     seen_keywords = set()
     for candidate in sorted(
         candidates,
-        key=lambda item: (-(item["end"] - item["start"]), item["start"], item["keyword"]),
+        key=lambda item: (
+            -(item["end"] - item["start"]),
+            -int(item.get("is_exact", False)),
+            -item["score"],
+            item["start"],
+            item["keyword"],
+        ),
     ):
         overlaps_existing = any(
             candidate["start"] < existing_end and candidate["end"] > existing_start
@@ -1138,27 +1225,22 @@ def _build_query_breakdown_keywords(
     )
 
 
-def _relabel_query_axes(
-    axis_indices: np.ndarray,
-    fallback_axis_labels: list[str],
+def _axis_label_key(label: str) -> str:
+    return _normalize(" ".join((label or "").replace("\n", " ").split()))
+
+
+def _is_maintenance_axis_label(label: str) -> bool:
+    return "maintenance" in set(_tokenize(label))
+
+
+def _build_query_axis_candidates(
     query_keywords: list[dict],
-    svd: TruncatedSVD | None,
     word_vectorizer: TfidfVectorizer,
-) -> list[str]:
-    """
-    Prefer exact query-matched labels for selected latent axes when those
-    query terms have meaningful word-feature loadings on the same components.
-    """
-    if svd is None or len(axis_indices) == 0 or not query_keywords:
-        return fallback_axis_labels
-
-    word_feature_names = word_vectorizer.get_feature_names_out()
-    if len(word_feature_names) == 0:
-        return fallback_axis_labels
-
+) -> list[dict]:
     vocabulary = word_vectorizer.vocabulary_
     query_candidates = []
     seen_candidates = set()
+
     for item in query_keywords:
         label = item["keyword"].strip()
         normalized_label = _normalize(label)
@@ -1187,6 +1269,228 @@ def _relabel_query_axes(
             }
         )
 
+    return query_candidates
+
+
+def _select_query_latent_axes(
+    vector: np.ndarray,
+    component_labels: list[str],
+    query_keywords: list[dict],
+    svd: TruncatedSVD | None,
+    word_vectorizer: TfidfVectorizer,
+    axis_limit: int = 6,
+) -> dict | None:
+    """
+    Prefer latent components that best support explicit query attributes, then
+    fill the remaining slots with the normal strongest components.
+    """
+    profile_array = np.asarray(vector, dtype=np.float32).ravel()
+    fallback_axes = select_latent_axes(profile_array, component_labels, axis_limit)
+    if fallback_axes is None:
+        return None
+
+    if svd is None or not query_keywords:
+        return fallback_axes
+
+    word_feature_names = word_vectorizer.get_feature_names_out()
+    if len(word_feature_names) == 0:
+        return fallback_axes
+
+    query_candidates = _build_query_axis_candidates(query_keywords, word_vectorizer)
+    if not query_candidates:
+        return fallback_axes
+
+    ranked_indices = np.argsort(np.abs(profile_array))[::-1]
+    selected_indices: list[int] = []
+    selected_labels: list[str] = []
+    used_indices = set()
+    used_label_keys = set()
+    selected_candidate_categories = set()
+
+    for candidate in query_candidates:
+        best_index = None
+        best_score = (-1.0, -1.0, -1.0)
+
+        for axis_index in ranked_indices:
+            axis_index = int(axis_index)
+            if axis_index in used_indices or axis_index >= svd.components_.shape[0]:
+                continue
+
+            word_loadings = svd.components_[axis_index, : len(word_feature_names)]
+            top_loading = float(np.max(np.abs(word_loadings)))
+            if top_loading <= 0:
+                continue
+
+            candidate_loading = max(
+                float(np.abs(word_loadings[feature_index]))
+                for feature_index in candidate["feature_indices"]
+            )
+            loading_ratio = candidate_loading / top_loading
+            if loading_ratio < 0.18:
+                continue
+
+            category_bonus = 1.0 if candidate["category"] != "semantic" else 0.0
+            candidate_score = (
+                loading_ratio,
+                category_bonus,
+                float(np.abs(profile_array[axis_index])),
+            )
+            if candidate_score > best_score:
+                best_score = candidate_score
+                best_index = axis_index
+
+        label_key = _axis_label_key(candidate["label"])
+        if best_index is None or not label_key or label_key in used_label_keys:
+            continue
+
+        selected_indices.append(best_index)
+        selected_labels.append(candidate["label"])
+        used_indices.add(best_index)
+        used_label_keys.add(label_key)
+        selected_candidate_categories.add(candidate["category"])
+        if len(selected_indices) >= min(axis_limit, profile_array.size):
+            break
+
+    for axis_index, axis_label in zip(
+        np.asarray(fallback_axes["axis_indices"], dtype=int),
+        fallback_axes["axis_labels"],
+    ):
+        axis_index = int(axis_index)
+        label_key = _axis_label_key(axis_label)
+        if axis_index in used_indices or label_key in used_label_keys:
+            continue
+        if (
+            "maintenance" in selected_candidate_categories
+            and _is_maintenance_axis_label(axis_label)
+        ):
+            continue
+        selected_indices.append(axis_index)
+        selected_labels.append(axis_label)
+        used_indices.add(axis_index)
+        used_label_keys.add(label_key)
+        if len(selected_indices) >= min(axis_limit, profile_array.size):
+            break
+
+    if len(selected_indices) < 3:
+        return fallback_axes
+
+    return {
+        "axis_indices": np.asarray(selected_indices, dtype=int),
+        "axis_labels": selected_labels,
+    }
+
+
+def _query_axis_display_values(
+    vector: np.ndarray,
+    axis_indices: np.ndarray,
+    axis_labels: list[str],
+    query_keywords: list[dict],
+) -> np.ndarray:
+    """
+    Make explicitly queried axes visually primary on the query radar while
+    keeping the underlying latent axis selection unchanged.
+    """
+    profile_array = np.asarray(vector, dtype=np.float32).ravel()
+    axis_indices = np.asarray(axis_indices, dtype=int)
+    display_values = np.abs(profile_array[axis_indices]).astype(np.float32, copy=True)
+    if display_values.size == 0:
+        return display_values
+
+    queried_label_keys = {
+        _axis_label_key(item["keyword"])
+        for item in query_keywords
+        if _axis_label_key(item.get("keyword", ""))
+    }
+    if not queried_label_keys:
+        return display_values
+
+    queried_positions = [
+        position
+        for position, label in enumerate(axis_labels)
+        if _axis_label_key(label) in queried_label_keys
+    ]
+    if not queried_positions:
+        return display_values
+
+    target_value = float(max(np.max(display_values), 1e-6))
+    for position in queried_positions:
+        display_values[position] = max(float(display_values[position]), target_value)
+    for position in range(display_values.size):
+        if position in queried_positions:
+            continue
+        display_values[position] = min(
+            float(display_values[position]),
+            target_value * QUERY_AXIS_FALLBACK_ATTENUATION,
+        )
+
+    return display_values
+
+
+def _flower_axis_display_values(
+    vector: np.ndarray,
+    axis_indices: np.ndarray,
+    axis_labels: list[str],
+    matched_terms: list[dict],
+) -> np.ndarray:
+    """
+    Make flower-card radar charts emphasize the query-matched axes that the
+    flower actually supports, while leaving unmatched fallback axes secondary.
+    """
+    profile_array = np.asarray(vector, dtype=np.float32).ravel()
+    axis_indices = np.asarray(axis_indices, dtype=int)
+    display_values = np.abs(profile_array[axis_indices]).astype(np.float32, copy=True)
+    if display_values.size == 0:
+        return display_values
+
+    matched_label_keys = {
+        _axis_label_key(item["keyword"])
+        for item in matched_terms
+        if _axis_label_key(item.get("keyword", ""))
+    }
+    if not matched_label_keys:
+        return display_values
+
+    matched_positions = [
+        position
+        for position, label in enumerate(axis_labels)
+        if _axis_label_key(label) in matched_label_keys
+    ]
+    if not matched_positions:
+        return display_values
+
+    target_value = float(max(np.max(display_values), 1e-6))
+    for position in matched_positions:
+        display_values[position] = max(float(display_values[position]), target_value)
+    for position in range(display_values.size):
+        if position in matched_positions:
+            continue
+        display_values[position] = min(
+            float(display_values[position]),
+            target_value * QUERY_AXIS_FALLBACK_ATTENUATION,
+        )
+
+    return display_values
+
+
+def _relabel_query_axes(
+    axis_indices: np.ndarray,
+    fallback_axis_labels: list[str],
+    query_keywords: list[dict],
+    svd: TruncatedSVD | None,
+    word_vectorizer: TfidfVectorizer,
+) -> list[str]:
+    """
+    Prefer exact query-matched labels for selected latent axes when those
+    query terms have meaningful word-feature loadings on the same components.
+    """
+    if svd is None or len(axis_indices) == 0 or not query_keywords:
+        return fallback_axis_labels
+
+    word_feature_names = word_vectorizer.get_feature_names_out()
+    if len(word_feature_names) == 0:
+        return fallback_axis_labels
+
+    query_candidates = _build_query_axis_candidates(query_keywords, word_vectorizer)
     if not query_candidates:
         return fallback_axis_labels
 
@@ -1202,10 +1506,20 @@ def _relabel_query_axes(
         if top_loading <= 0:
             continue
 
+        occupied_label_keys = {
+            _axis_label_key(label)
+            for label_position, label in enumerate(relabeled_axes)
+            if label_position != axis_position
+        }
         best_candidate = None
         best_score = (-1.0, -1.0, -1.0)
         for candidate in query_candidates:
-            if candidate["normalized"] in used_candidate_labels:
+            candidate_label_key = _axis_label_key(candidate["label"])
+            if (
+                candidate["normalized"] in used_candidate_labels
+                or not candidate_label_key
+                or candidate_label_key in occupied_label_keys
+            ):
                 continue
 
             candidate_loading = max(
@@ -1497,6 +1811,20 @@ def _component_labels_from_svd(
     for component in svd.components_:
         word_loadings = component[: len(word_feature_names)]
         ranked_indices = np.argsort(np.abs(word_loadings))[::-1]
+        component_terms = [
+            word_feature_names[int(index)]
+            for index in ranked_indices[:40]
+        ]
+        component_term_ranks = {}
+        for rank, term in enumerate(component_terms):
+            normalized_component_term = _normalize(term)
+            if not normalized_component_term:
+                continue
+            component_term_ranks.setdefault(normalized_component_term, rank)
+        component_term_tokens = [
+            set(_tokenize(term))
+            for term in component_terms
+        ]
         label = None
 
         for index in ranked_indices[:40]:
@@ -1512,14 +1840,28 @@ def _component_labels_from_svd(
 
             term_tokens = set(_tokenize(term))
             best_descriptor = None
-            best_descriptor_score = (-1, -1)
+            best_descriptor_score = (-1, -1, -1, -1)
             for candidate in descriptor_candidates:
                 candidate_tokens = candidate["tokens"]
                 overlap = len(candidate_tokens & term_tokens)
                 if overlap == 0:
                     continue
                 if candidate_tokens <= term_tokens or term_tokens <= candidate_tokens:
-                    score = (overlap, len(candidate["normalized"]))
+                    exact_term_rank = component_term_ranks.get(candidate["normalized"])
+                    component_support = max(
+                        (
+                            len(candidate_tokens & top_term_tokens)
+                            for top_term_tokens in component_term_tokens
+                        ),
+                        default=0,
+                    )
+                    score = (
+                        int(exact_term_rank is not None),
+                        -999 if exact_term_rank is None else -exact_term_rank,
+                        component_support,
+                        overlap,
+                        len(candidate["normalized"]),
+                    )
                     if score > best_descriptor_score:
                         best_descriptor_score = score
                         best_descriptor = candidate["label"]
@@ -1723,6 +2065,7 @@ def _build_suggestion(
     for matched_term in matched_terms:
         if matched_term["category"] == "semantic":
             matched_term["category"] = _keyword_category_for_flower(matched_term["keyword"], flower)
+    matched_terms = _merge_keyword_lists([matched_terms], MAX_MATCHED_KEYWORDS)
     displayed_meanings = _select_display_texts(flower["meanings"], query, 2)
     displayed_occasions = _select_display_texts(flower["occasions"], query, 2)
 
@@ -1734,12 +2077,19 @@ def _build_suggestion(
 
     radar_chart = None
     if len(query_axis_labels) >= 3:
+        flower_axis_display_values = _flower_axis_display_values(
+            flower_lsa_vector,
+            query_axis_indices,
+            query_axis_labels,
+            matched_terms,
+        )
         radar_chart = build_latent_radar_chart(
             flower_lsa_vector,
             component_labels,
             profile_kind="flower",
             axis_indices=query_axis_indices,
             axis_labels=query_axis_labels,
+            axis_values=flower_axis_display_values,
         )
 
     return {
@@ -1834,7 +2184,13 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
         return _empty_response(query, query_breakdown_keywords)
 
     top_score = positive_scores[0]
-    query_axes = select_latent_axes(query_lsa[0], component_labels)
+    query_axes = _select_query_latent_axes(
+        query_lsa[0],
+        component_labels,
+        query_breakdown_keywords,
+        svd,
+        word_vectorizer,
+    )
     query_radar_chart = None
     query_axis_indices = np.asarray([], dtype=int)
     query_axis_labels: list[str] = []
@@ -1854,12 +2210,19 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
                 query_axis_indices,
                 query_axis_labels,
             )
+        query_axis_display_values = _query_axis_display_values(
+            query_lsa[0],
+            query_axis_indices,
+            query_axis_labels,
+            query_breakdown_keywords,
+        )
         query_radar_chart = build_latent_radar_chart(
             query_lsa[0],
             component_labels,
             profile_kind="query",
             axis_indices=query_axis_indices,
             axis_labels=query_axis_labels,
+            axis_values=query_axis_display_values,
         )
     suggestions = []
     for index in ranked_indices:

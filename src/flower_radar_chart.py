@@ -103,6 +103,7 @@ def build_latent_radar_chart(
     profile_kind: str = "flower",
     axis_indices: np.ndarray | None = None,
     axis_labels: list[str] | None = None,
+    axis_values: np.ndarray | None = None,
     axis_limit: int = MAX_RADAR_AXES,
 ) -> dict | None:
     """
@@ -124,7 +125,12 @@ def build_latent_radar_chart(
         axis_labels = [_format_axis_label(label) for label in axis_labels]
 
     axis_indices = np.asarray(axis_indices, dtype=int)
-    profile_values = np.abs(profile_array[axis_indices])
+    if axis_values is None:
+        profile_values = np.abs(profile_array[axis_indices])
+    else:
+        profile_values = np.abs(np.asarray(axis_values, dtype=np.float32).ravel())
+        if profile_values.size != len(axis_labels):
+            return None
     scale = float(max(np.max(profile_values), 1e-6))
     normalized_profile = profile_values / scale
 
