@@ -17,8 +17,8 @@ from models import db, Episode, Review
 #from flower_recommender_prototype import recommend_flowers     # SVD v1 - Elise
 #from flower_recommender_prototype2 import recommend_flowers    # v1 w/ RAKE - Michelle (Need to change requirements.txt)
 
-from flower_recommender_prototype3 import recommend_flowers, visualizer_flowers     # SVD 3 - Kaustav (*FOR P03 DEPLOYMENT*)
-#from flower_recommender_v3 import recommend_flowers            # SVD v3 - Elise (playtesting)
+from flower_recommender_prototype3 import recommend_flowers, visualizer_flowers     # SVD 3 (Latent Semantic Analysis) - Kaustav
+#from flower_recommender_v3 import recommend_flowers            # TF-IDF baseline (Exact Lexical Matching) - Elise (slop)
 
 from flower_autocomplete import autocomplete_queries            # Autocomplete
 

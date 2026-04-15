@@ -1,5 +1,6 @@
 """
-FloraSense retrieval system  -  Inverted Index + TF-IDF + LSA + Rocchio
+FloraSense retrieval system  -  Inverted Index + TF-IDF + Rocchio
+    WIP: Very SLOP right now
 Dataset: merged.csv  (name, scientific_name, color, planttype,
                        maintenance, meaning, Special Occasions)
 
@@ -15,30 +16,19 @@ IR concepts applied
                                field importance via token repetition
 - Term-document matrix       : sparse (n_flowers x n_terms) built by
                                TfidfVectorizer.fit_transform()
-- Vector space model         : each flower and query is a vector in
-                               term space, then compressed into LSA space
-- TruncatedSVD / LSA         : M = U * S * V^T  decomposes the term-doc
-                               matrix into latent dimensions. Based
-                               directly on the in-class SVD demo:
-                               query projected as  q * V  (words_compressed)
-                               then ranked by cosine similarity against
-                               U * S  (docs_compressed_normed)
 - Cosine similarity          : l2-normalized dot product for ranking
 - Rocchio's method           : pseudo-relevance feedback shifts query
                                vector toward centroid of top-k results
 - Jaccard similarity         : secondary tiebreaker on token overlap
 - Minimum Edit Distance      : Wagner-Fisher DP for fuzzy color/maintenance
                                typo handling
-- Chunking                   : sliding window over meaning/occasion prose
-                               to extract the most query-relevant passage
-                               for display, without relying on punctuation
 
 Design principle
 ----------------
 Inverted index  ->  display and keyword categorization  (exact, readable)
 TF-IDF + LSA    ->  retrieval ranking                   (semantic, robust)
 Full prose      ->  TF-IDF corpus only, never shown to user directly
-Display fields  ->  short keyword labels + best sliding-window chunk
+Display fields  ->  short keyword labels
 These layers never interfere with each other.
 """
 
@@ -48,12 +38,14 @@ import re
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
+import json
+import os
 
 import numpy as np
 from nltk.stem import PorterStemmer
-from sklearn.decomposition import TruncatedSVD
+#from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+#from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
 # ---------------------------------------------------------------------------
@@ -61,11 +53,51 @@ from sklearn.preprocessing import normalize
 # ---------------------------------------------------------------------------
 
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
+FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
+
+_IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
+try:
+    _IMAGE_MAP = json.loads(_IMAGE_MAP_PATH.read_text(encoding="utf-8"))
+except Exception:
+    _IMAGE_MAP = {}
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+_IMAGE_ALIAS_TARGETS = {
+    "arum lily": "calla lily",
+    "pelargonium": "geranium",
+    "zantedeschia": "calla lily",
+}
+
+_IMAGE_GENERIC_TOKENS = {"flower", "flowers", "meaning", "meanings"}
+
+
+
+# Build filename lookup ONCE
+_LOCAL_FLOWER_IMAGE_FILES = {}
+_LOCAL_IMAGE_FILENAMES = set()
+
+for file in FLOWER_IMAGE_DIR.iterdir():
+    if file.suffix.lower() in _IMAGE_EXTENSIONS:
+        key = file.stem.lower()  # e.g. "calla-lily-meaning"
+        _LOCAL_FLOWER_IMAGE_FILES[key] = file.name
+        _LOCAL_IMAGE_FILENAMES.add(file.name)
+
+
+_COLOR_FALLBACK_IMAGE_FILENAMES = {
+    "blue": "blue-flowers-meaning.jpg",
+    "pink": "pink-flowers-meaning.jpg",
+    "purple": "purple-flowers-meaning.jpg",
+    "white": "white-flowers.jpg",
+    "yellow": "yellow-flowers-meaning.jpg",
+}
+
+_GENERIC_FLOWER_IMAGE_FILENAME = "10-most-beautiful-flowers.jpg"
 
 # Number of latent dimensions for SVD / LSA.
 # Most of our flower data lives in far fewer than 40 dimensions (small corpus),
 # but 40 is a safe upper bound that we cap dynamically below.
-N_COMPONENTS = 40
+# N_COMPONENTS = 40
 
 # Token repetition per field: raises raw TF so TF-IDF weights that field more.
 FIELD_REPEAT = {
@@ -119,9 +151,6 @@ ROCCHIO_TOP_K = 3     # how many top results to treat as pseudo-relevant
 # Wagner-Fisher MED: max edit distance allowed for fuzzy matching
 MED_THRESHOLD = 2
 
-# Sliding window chunking parameters for prose display
-CHUNK_SIZE = 25   # tokens per window
-CHUNK_STEP = 8    # tokens to advance per step
 
 # Max label length: meaning entries shorter than this are clean keyword
 # labels (e.g. "Everlasting love") rather than scraped prose paragraphs
@@ -235,6 +264,114 @@ def _plant_type_aliases(value: str) -> set:
         aliases.add(lowered[:-1])
     return aliases
 
+# ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+
+
+def _image_match_score(candidate: str, local_key: str) -> int:
+    candidate_tokens = [token for token in _tokenize(candidate) if token not in _IMAGE_GENERIC_TOKENS]
+    local_tokens = [token for token in _tokenize(local_key) if token not in _IMAGE_GENERIC_TOKENS]
+    if not candidate_tokens or not local_tokens:
+        return -1
+
+    candidate_token_set = set(candidate_tokens)
+    local_token_set = set(local_tokens)
+    overlap = candidate_token_set & local_token_set
+    if not overlap:
+        return -1
+
+    score = len(overlap) * 10
+    if local_key.startswith(candidate):
+        score += 20
+    elif candidate.startswith(local_key):
+        score += 12
+    elif candidate in local_key or local_key in candidate:
+        score += 6
+
+    if candidate_token_set <= local_token_set:
+        score += 16 - max(0, len(local_token_set) - len(candidate_token_set))
+    elif local_token_set <= candidate_token_set:
+        score += 12 - max(0, len(candidate_token_set) - len(local_token_set))
+
+    return score
+
+def _best_local_image_filename(candidate: str) -> str | None:
+    normalized_candidate = _normalize_image_key(candidate)
+    if not normalized_candidate:
+        return None
+
+    candidates = [normalized_candidate]
+    alias_target = _IMAGE_ALIAS_TARGETS.get(normalized_candidate)
+    if alias_target:
+        candidates.append(_normalize_image_key(alias_target))
+
+    for current_candidate in candidates:
+        direct_match = _LOCAL_FLOWER_IMAGE_FILES.get(current_candidate)
+        if direct_match:
+            return direct_match
+
+    best_score = -1
+    best_filename = None
+    for current_candidate in candidates:
+        for local_key, filename in _LOCAL_FLOWER_IMAGE_FILES.items():
+            score = _image_match_score(current_candidate, local_key)
+            if score > best_score:
+                best_score = score
+                best_filename = filename
+
+    return best_filename if best_score >= 20 else None
+
+def _normalize_image_key(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+def _matching_image_candidates(flower: dict):
+    candidates = []
+
+    if flower.get("name"):
+        candidates.append(("name", flower["name"]))
+
+    if flower.get("scientific_name"):
+        candidates.append(("scientific", flower["scientific_name"]))
+
+    for pt in flower.get("plant_types", []):
+        candidates.append(("plant_type", pt))
+
+    return [(label, _normalize_image_key(c)) for label, c in candidates]
+
+
+def _resolve_flower_image_url(flower: dict) -> str | None:
+    for _, candidate in _matching_image_candidates(flower):
+        filename = _best_local_image_filename(candidate)
+        if filename:
+            return f"/api/flower-images/{filename}"
+
+        for remote_key, remote_url in _IMAGE_MAP.items():
+            normalized_remote_key = _normalize_image_key(remote_key)
+            if candidate == normalized_remote_key or candidate in normalized_remote_key or normalized_remote_key in candidate:
+                return remote_url
+
+    return _fallback_image_url_from_metadata(flower)
+
+# ---------------------------------------------------------------------------
+# TF-IDF Ranking
+# ---------------------------------------------------------------------------
+
+def _rank_tfidf(query_tfidf, td_matrix):
+    # Ensure dense 2D
+    if hasattr(query_tfidf, "toarray"):
+        query_vec = query_tfidf.toarray()
+    else:
+        query_vec = np.atleast_2d(query_tfidf)
+
+    docs = td_matrix.toarray()
+
+    query_norm = normalize(query_vec)
+    docs_norm = normalize(docs)
+
+    return docs_norm.dot(query_norm.T).squeeze()
+
+
 
 # ---------------------------------------------------------------------------
 # Minimum Edit Distance  (Wagner-Fisher algorithm)
@@ -315,7 +452,7 @@ def _build_document(flower: dict) -> str:
     This string is what becomes one row in the term-document matrix.
 
     Uses the FULL meanings and occasions (including long prose) for
-    maximum vocabulary coverage in the LSA space. The display layer
+    maximum vocabulary coverage for TF-IDF ranking. The display layer
     uses the separate display_meanings / display_occasions fields.
     """
     parts = []
@@ -335,63 +472,6 @@ def _build_document(flower: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Chunking  (sliding window for prose display)
-# ---------------------------------------------------------------------------
-
-def _best_chunk(prose: str, query_stems: set) -> str:
-    """
-    Sliding window chunking over prose tokens.
-
-    Slides a window of CHUNK_SIZE tokens across the prose, stepping
-    CHUNK_STEP tokens at a time. Each window is scored by how many of
-    its stems overlap with the query stems. The highest-scoring window
-    is returned as a readable phrase.
-
-    This avoids relying on sentence-boundary punctuation entirely, which
-    is important because much of the meaning text in merged.csv is
-    run-on prose scraped from web pages with inconsistent punctuation.
-
-    If the prose is shorter than CHUNK_SIZE tokens it is returned as-is.
-    """
-    tokens = _tokenize(prose)
-    stems  = [_stemmer.stem(t) for t in tokens]
-
-    if len(tokens) <= CHUNK_SIZE:
-        return prose
-
-    best_score        = -1
-    best_chunk_tokens = tokens[:CHUNK_SIZE]
-
-    for start in range(0, len(tokens) - CHUNK_SIZE + 1, CHUNK_STEP):
-        window_stems = set(stems[start : start + CHUNK_SIZE])
-        overlap      = len(window_stems & query_stems)
-        if overlap > best_score:
-            best_score        = overlap
-            best_chunk_tokens = tokens[start : start + CHUNK_SIZE]
-
-    # Snap to nearest clause boundary in the original prose so we
-    # don't return "...friendship that is still in" mid-sentence.
-    # Find where the best chunk starts in the original prose, then
-    # extend to the next punctuation mark.
-    chunk_start_word = best_chunk_tokens[0]
-    # Find the character position of the chunk start in the prose
-    pattern = r"\b" + re.escape(chunk_start_word) + r"\b"
-    match = re.search(pattern, prose.lower())
-    if not match:
-        return " ".join(best_chunk_tokens)
-
-    # From that position, grab text up to the next . , ; or end of string
-    excerpt = prose[match.start():]
-    boundary = re.search(r"[.,;]", excerpt)
-    if boundary:
-        return excerpt[:boundary.start()].strip()
-    # No boundary found --> return the full remaining text up to a word limit
-    words = excerpt.split()
-    return " ".join(words[:CHUNK_SIZE]).strip()
-
-
-
-# ---------------------------------------------------------------------------
 # Model loader  (lru_cache -- built once per process)
 # ---------------------------------------------------------------------------
 
@@ -399,16 +479,7 @@ def _best_chunk(prose: str, query_stems: set) -> str:
 def _load_model() -> tuple:
     """
     Builds and caches everything needed for retrieval.
-
-    SVD decomposition follows the in-class notebook exactly:
-        td_matrix = TF-IDF term-document matrix  (n_flowers x n_terms)
-        docs_compressed, s, words_compressed = svds(td_matrix, k=40)
-        words_compressed = words_compressed.T   (n_terms x k)
-        docs_compressed_normed = normalize(docs_compressed)  (n_flowers x k)
-
-    At query time:
-        query_vec = normalize(query_tfidf.dot(words_compressed))  (1 x k)
-        sims = docs_compressed_normed.dot(query_vec.T)
+    TF-IDF term-document matrix. 
     """
 
     # ── 1. Load CSV and group multi-row flowers ──────────────────────────────
@@ -546,55 +617,24 @@ def _load_model() -> tuple:
     )
     td_matrix = vectorizer.fit_transform(documents)  # sparse (n_flowers, n_terms)
 
-    # ── 6. SVD decomposition (following in-class notebook exactly) ───────────
-    #
-    # In-class:   docs_compressed, s, words_compressed = svds(td_matrix, k=40)
-    #             words_compressed = words_compressed.T
-    #             docs_compressed_normed = normalize(docs_compressed)
-    #
-    # Here we use TruncatedSVD which does the same decomposition.
-    # svd.fit_transform(td_matrix)  returns  U * S  (docs_compressed)
-    # svd.components_.T             returns  V       (words_compressed)
-    #
-    # At query time we project: query_vec = normalize(query_tfidf * V)
-    # This is identical to the notebook's:
-    #   query_vec = normalize(query_tfidf.dot(words_compressed))
-    n_components = min(N_COMPONENTS, td_matrix.shape[1] - 1, len(flowers) - 1)
-    svd = TruncatedSVD(n_components=n_components, algorithm="randomized", random_state=42)
-
-    docs_compressed        = svd.fit_transform(td_matrix)    # (n_flowers, k)  = U * S
-    words_compressed       = svd.components_.T               # (n_terms, k)    = V
-    docs_compressed_normed = normalize(docs_compressed)      # l2 row-normalize
-
-    return (flowers, vectorizer, words_compressed, docs_compressed_normed,
-            td_matrix, keyword_index, known_colors, known_maint, stem_to_word)
+    return (flowers, vectorizer, td_matrix, keyword_index, known_colors, known_maint, stem_to_word)
 
 
 # ---------------------------------------------------------------------------
 # Rocchio pseudo-relevance feedback
 # ---------------------------------------------------------------------------
 
-def _rocchio_expand(
-    query_vec: np.ndarray,
-    docs_compressed_normed: np.ndarray,
-    top_indices: np.ndarray,
-) -> np.ndarray:
-    """
-    Rocchio query expansion:
 
-        q_new = alpha * q_original  +  beta * (1/k) * sum(relevant_docs)
-
-    Shifts the query vector toward the centroid of the top-k initial
-    results, then re-normalizes. This biases re-ranking toward the
-    semantic neighborhood of the best initial matches.
-    """
+def _rocchio_expand_tfidf(query_vec, td_matrix, top_indices):
     k = min(ROCCHIO_TOP_K, len(top_indices))
     if k == 0:
         return query_vec
-    relevant = docs_compressed_normed[top_indices[:k]]             # (k, n_components)
-    centroid = relevant.mean(axis=0, keepdims=True)                # (1, n_components)
+
+    relevant = td_matrix[top_indices[:k]]
+    centroid = relevant.mean(axis=0)
+
     expanded = ROCCHIO_ALPHA * query_vec + ROCCHIO_BETA * centroid
-    return normalize(expanded, norm="l2")
+    return expanded if hasattr(expanded, "toarray") else np.asarray(expanded)
 
 
 # ---------------------------------------------------------------------------
@@ -714,21 +754,23 @@ def _categorize_chip(stem: str, flower: dict) -> str:
     specific flower's own fields.
     Priority: color > maintenance > plant type > occasion > meaning > name
     """
-    color_stems   = {s for c  in flower["colors"]      for s in _tokenize_and_stem(_normalize(c))}
-    maint_stems   = {s for m  in flower["maintenance"]  for s in _tokenize_and_stem(_normalize(m))}
-    pt_stems      = {s for pt in flower["plant_types"]  for s in _tokenize_and_stem(_normalize(pt))}
-    occ_stems     = {s for o  in flower["occasions"]    for s in _tokenize_and_stem(_normalize(o))}
-    meaning_stems = {s for m  in flower["meanings"]     for s in _tokenize_and_stem(_normalize(m))}
-    name_stems    = set(_tokenize_and_stem(_normalize(flower["name"])))
+    color_stems = {s for c in flower["colors"] for s in _tokenize_and_stem(_normalize(c))}
+    maint_stems = {s for m in flower["maintenance"] for s in _tokenize_and_stem(_normalize(m))}
+    pt_stems = {s for pt in flower["plant_types"] for s in _tokenize_and_stem(_normalize(pt))}
+    occ_stems = {s for o in flower["occasions"] for s in _tokenize_and_stem(_normalize(o))}
+    meaning_stems = {s for m in flower["meanings"] for s in _tokenize_and_stem(_normalize(m))}
+    name_stems = set(_tokenize_and_stem(_normalize(flower["name"])))
 
     for part in stem.split():
-        if part in color_stems:    return "color"
-        if part in maint_stems:    return "maintenance"
-        if part in pt_stems:       return "plant type"
-        if part in occ_stems:      return "occasion"
-        if part in meaning_stems:  return "meaning"
-        if part in name_stems:     return "name"
+        if part in color_stems: return "color"
+        if part in maint_stems: return "maintenance"
+        if part in pt_stems: return "plant_type"
+        if part in occ_stems: return "occasion"
+        if part in meaning_stems: return "meaning"
+        if part in name_stems: return "name"
+
     return "text"
+
 
 
 # ---------------------------------------------------------------------------
@@ -740,13 +782,12 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     Full pipeline per request
     -------------------------
     1. Normalize query -> TF-IDF vector  (same vocab as corpus)
-    2. Project into LSA space:  query_vec = normalize(query_tfidf * V)
-       (mirrors the in-class notebook: query_vec = normalize(query_tfidf.dot(words_compressed)))
-    3. Initial cosine ranking:  sims = docs_compressed_normed.dot(query_vec.T)
+       NO SVD
+    3. Initial cosine ranking
     4. Rocchio expansion: shift query toward centroid of top-3 results
     5. Re-rank with expanded query vector
     6. Jaccard tiebreaker for near-equal cosine scores
-    7. Inverted index -> query breakdown keywords (readable, correctly categorized)
+    7. Inverted index -> query breakdown keywords 
     8. Hadamard product -> per-card matched keyword chips (stem -> word map)
     9. Display meanings: short keyword labels from dataset
    10. Display occasions: first clause of occasion prose
@@ -754,89 +795,80 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
        slide a window to extract the most query-relevant passage
     """
     if not query or not query.strip():
-        return {"query": query, "keywords_used": [], "suggestions": []}
+        return {
+            "query": query,
+            "keywords_used": [],
+            "query_latent_radar_chart": None,
+            "suggestions": []
+        }
 
-    (flowers, vectorizer, words_compressed, docs_compressed_normed,
-     td_matrix, keyword_index, known_colors, known_maint, stem_to_word) = _load_model()
+    (flowers, vectorizer, td_matrix, keyword_index,
+     known_colors, known_maint, stem_to_word) = _load_model()
 
-    # Transform query into TF-IDF space -- same vocabulary as corpus
-    query_tfidf = vectorizer.transform([_normalize(query)])          # sparse (1, n_terms)
-    query_stems = set(_tokenize_and_stem(_normalize(query)))
+    query_norm = _normalize(query)
+    query_tfidf = vectorizer.transform([query_norm])
+    query_stems = set(_tokenize_and_stem(query_norm))
 
-    # Project query into LSA space using V matrix (words_compressed)
-    # This is identical to the notebook:
-    #   query_vec = normalize(query_tfidf.dot(words_compressed)).squeeze()
-    query_vec = normalize(query_tfidf.toarray().dot(words_compressed))  # (1, k)
+    # TF-IDF ranking
+    sims_initial = _rank_tfidf(query_tfidf, td_matrix)
+    initial_top = np.argsort(sims_initial)[::-1]
 
-    # Initial cosine ranking
-    # sims = docs_compressed_normed.dot(query_vec.T) -- same as notebook
-    sims_initial = docs_compressed_normed.dot(query_vec.T).squeeze()   # (n_flowers,)
-    initial_top  = np.argsort(sims_initial)[::-1]
+    # Rocchio
+    expanded_vec = _rocchio_expand_tfidf(query_tfidf, td_matrix, initial_top)
+    sims = _rank_tfidf(expanded_vec, td_matrix)
 
-    # Rocchio expansion -> re-rank
-    expanded_vec  = _rocchio_expand(query_vec, docs_compressed_normed, initial_top)
-    sims_expanded = docs_compressed_normed.dot(expanded_vec.T).squeeze()
-
-    # Query breakdown via inverted index
+    # Query breakdown
     keywords_used = _extract_query_keywords(
         query, keyword_index, known_colors, known_maint
     )
 
-    top_indices = np.argsort(sims_expanded)[::-1]
-    top_score   = float(sims_expanded[top_indices[0]]) if len(top_indices) else 1.0
+    top_indices = np.argsort(sims)[::-1]
+    #top_score = float(sims[top_indices[0]]) if len(top_indices) else 1.0
 
     suggestions = []
     for idx in top_indices:
         if len(suggestions) >= limit:
             break
-        if sims_expanded[idx] <= 0:
+        if sims[idx] <= 0:
             break
 
         flower = flowers[idx]
 
-        # Jaccard tiebreaker -- small bonus (max +5 pts)
         flower_stems = set(_tokenize_and_stem(" ".join([
             flower["name"], *flower["colors"], *flower["maintenance"],
             *flower["plant_types"], *flower["meanings"], *flower["occasions"],
         ])))
+
         jaccard_bonus = _jaccard(query_stems, flower_stems) * 5
 
-        cosine_score = (float(sims_expanded[idx]) / top_score) * 100 if top_score > 0 else 0.0
-        final_score  = round(min(cosine_score + jaccard_bonus, 100.0), 2)
+        cosine_score = float(sims[idx]) * 100
+        final_score = round(cosine_score, 2) # no jaccard bonus if we want to be consistent with raw sim score
 
         matched = _extract_matched_keywords(
             flower, query_tfidf, td_matrix[idx], vectorizer, stem_to_word
         )
 
-        # Display meanings: use short keyword labels.
-        # Apply chunking only if a label is still too long (shouldn't happen
-        # often after _extract_display_meanings, but handles edge cases).
-        display_meanings = [
-            m if len(m) <= MAX_LABEL_LEN else _best_chunk(m, query_stems)
-            for m in flower["display_meanings"]
-        ]
+        display_meanings = flower["display_meanings"]
 
-        # Display occasions: already trimmed to first clause.
-        # Apply chunking if the clause is still long.
-        display_occasions = [
-            o if len(_tokenize(o)) <= CHUNK_SIZE else _best_chunk(o, query_stems)
-            for o in flower["display_occasions"]
-        ]
+        display_occasions = flower["display_occasions"]
 
         suggestions.append({
-            "name":             flower["name"],
-            "scientific_name":  flower["scientific_name"],
-            "colors":           flower["colors"],
-            "plant_types":      flower["plant_types"],
-            "maintenance":      flower["maintenance"],
-            "meanings":         display_meanings,
-            "occasions":        display_occasions,
-            "score":            final_score,
+            "name": flower["name"],
+            "scientific_name": flower["scientific_name"],
+            "colors": flower["colors"],
+            "plant_types": flower["plant_types"],
+            "maintenance": flower["maintenance"],
+            "meanings": display_meanings,
+            "occasions": display_occasions,
+            "image_url": _resolve_flower_image_url(flower),
+            "score": final_score,
             "matched_keywords": matched,
+            "latent_radar_chart": None
         })
 
     return {
-        "query":         query,
+        "query": query,
         "keywords_used": keywords_used,
-        "suggestions":   suggestions,
+        "query_latent_radar_chart": None,
+        "suggestions": suggestions
     }

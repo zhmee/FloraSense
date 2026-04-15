@@ -210,9 +210,17 @@ function renderHighlightedText(text: string, highlightTerms: HighlightProfile[])
   })
 }
 
+// Relative to top result
+/*
 function getMatchStrength(score: number, bestScore: number): number {
   if (bestScore <= 0) return 0
   return Math.max(Math.min(score / bestScore, 1), 0.12)
+}
+  */
+
+// Raw score
+function getMatchStrength(score: number): number {
+  return Math.max(Math.min(score/100, 1), 0)
 }
 
 function getQueryBreakdownKeywords(results: RecommendationResponse): KeywordUsed[] {
@@ -278,7 +286,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const skipNextAutocompleteRef = useRef<boolean>(false)
 
   const queryBreakdownKeywords = getQueryBreakdownKeywords(results)
-  const topScore = results.suggestions[0]?.score ?? 0
+  // const topScore = results.suggestions[0]?.score ?? 0
   const showAnimatedQuery = isActive && !query && !isQueryFocused
 
   useEffect(() => {
@@ -663,7 +671,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
           <div className="hero-copy-block">
             <p className="eyebrow">Describe a feeling. Discover a flower.</p>
             <p className="hero-copy ranker-copy">
-              Describe a mood, color, level of care, or meaning, and receive a short ranked set of flower
+              Describe a mood, color, level of care, and/or meaning, and receive a short ranked set of flower
               suggestions that feels more curated than filtered.
             </p>
 
@@ -815,7 +823,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
               {results.suggestions.map((suggestion, index) => {
-                const strength = getMatchStrength(suggestion.score, topScore)
+                const strength = getMatchStrength(suggestion.score)
                 const strengthLabel = Math.round(strength * 100)
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
                 const displayName = formatFlowerDisplayName(suggestion.name)

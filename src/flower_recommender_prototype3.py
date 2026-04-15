@@ -2032,7 +2032,7 @@ def _build_suggestion(
     flower: dict,
     query: str,
     similarity: float,
-    top_score: float,
+    #top_score: float,
     query_lsa_vector: np.ndarray,
     flower_lsa_vector: np.ndarray,
     query_word_matrix,
@@ -2100,8 +2100,8 @@ def _build_suggestion(
         "maintenance": flower["maintenance"],
         "meanings": displayed_meanings,
         "occasions": displayed_occasions,
-        # this score is relative to the best result for the same query
-        "score": round((similarity / top_score) * 100, 2),
+        # this score is NOT relative to the best result for the same query anymore!
+        "score": round(similarity * 100, 2),
         "matched_keywords": matched_terms,
         "latent_radar_chart": None if radar_chart is None else radar_chart["image_data_url"],
         "latent_radar_axes": [] if radar_chart is None else radar_chart["axis_labels"],
@@ -2183,7 +2183,7 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
         # even if no flower matches, we can still expose important query terms
         return _empty_response(query, query_breakdown_keywords)
 
-    top_score = positive_scores[0]
+    #top_score = positive_scores[0]
     query_axes = _select_query_latent_axes(
         query_lsa[0],
         component_labels,
@@ -2235,7 +2235,7 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
                 flowers[index],
                 query,
                 similarity,
-                top_score,
+                #top_score,
                 query_lsa[0],
                 lsa_matrix[index],
                 query_word_matrix,
