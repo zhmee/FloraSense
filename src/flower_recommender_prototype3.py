@@ -17,6 +17,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 import json
+from collections import defaultdict
 
 import numpy as np
 from scipy.sparse import hstack
@@ -32,6 +33,7 @@ from flower_radar_chart import build_latent_radar_chart, select_latent_axes
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
 TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_texts"
 FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
+SYNONYM_FILE = Path(__file__).resolve().parent / "data" / "synonyms.csv"
 
 # optional external map of scraped page keys -> image URLs
 _IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
@@ -77,6 +79,34 @@ GENERIC_EXPLANATION_TOKENS = {
     "symbolize",
     "symbolizes",
 }
+SEMANTIC_SYNONYM_NOISE_TOKENS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "of",
+    "on",
+    "or",
+    "s",
+    "someone",
+    "something",
+    "the",
+    "to",
+    "up",
+    "with",
+}
+BLOCKED_SEMANTIC_SYNONYM_LINKS = {
+    ("indian", "red"),
+    ("red", "indian"),
+}
+MAINTENANCE_LEVEL_TOKENS = {"low", "medium", "high"}
+FLOWER_QUERY_TOKENS = {"flower", "flowers"}
 
 # token pattern because we need words for matching/displaying
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
@@ -114,6 +144,60 @@ def _normalize(text: str) -> str:
     lowercase, no punctuation, spaces kept.
     """
     return re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
+
+
+def _format_maintenance_value(value: str) -> str:
+    normalized_value = _normalize(value)
+    if normalized_value in {"low", "medium", "high"}:
+        return f"{normalized_value} maintenance"
+    return (value or "").strip()
+
+
+def _format_maintenance_values(values: list[str]) -> list[str]:
+    return [
+        formatted_value
+        for formatted_value in (_format_maintenance_value(value) for value in values)
+        if formatted_value
+    ]
+
+
+def _format_keyword_for_display(category: str | None, keyword: str) -> str:
+    if category == "maintenance":
+        return _format_maintenance_value(keyword)
+    return (keyword or "").strip()
+
+
+@lru_cache(maxsize=1)
+def _load_synonym_index() -> dict[str, set[str]]:
+    synonym_index: dict[str, set[str]] = defaultdict(set)
+
+    try:
+        with SYNONYM_FILE.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                base_word = _normalize(row.get("word", ""))
+                if not base_word:
+                    continue
+
+                raw_related = row.get("synonym", "")
+                related_values = set()
+                for sense in raw_related.split("|"):
+                    for item in sense.split(";"):
+                        normalized_item = _normalize(item)
+                        if normalized_item and normalized_item != base_word:
+                            related_values.add(normalized_item)
+
+                if not related_values:
+                    continue
+
+                synonym_index[base_word].update(related_values)
+                for related_value in related_values:
+                    if " " not in related_value:
+                        synonym_index[related_value].add(base_word)
+    except Exception:
+        return {}
+
+    return {key: set(values) for key, values in synonym_index.items()}
 
 
 def _normalize_image_key(text: str) -> str:
@@ -316,6 +400,44 @@ def _text_similarity(left: str, right: str) -> float:
     if not left_normalized or not right_normalized:
         return 0.0
     return float(SequenceMatcher(None, left_normalized, right_normalized).ratio())
+
+
+def _synonym_tokens(token: str) -> set[str]:
+    normalized_token = _normalize(token)
+    if not normalized_token:
+        return set()
+
+    related_tokens = set()
+    for related_value in _load_synonym_index().get(normalized_token, set()):
+        for related_token in _tokenize(related_value):
+            if (
+                not related_token
+                or related_token == normalized_token
+                or related_token in SEMANTIC_SYNONYM_NOISE_TOKENS
+                or related_token in GENERIC_EXPLANATION_TOKENS
+                or (normalized_token, related_token) in BLOCKED_SEMANTIC_SYNONYM_LINKS
+            ):
+                continue
+            related_tokens.add(related_token)
+    return related_tokens
+
+
+def _semantic_token_matches(query_tokens: set[str], candidate_token: str) -> bool:
+    normalized_candidate = _normalize(candidate_token)
+    if not normalized_candidate:
+        return False
+
+    for query_token in query_tokens:
+        if not query_token:
+            continue
+        if (
+            normalized_candidate == query_token
+            or _tokens_share_root(normalized_candidate, query_token)
+            or normalized_candidate in _synonym_tokens(query_token)
+        ):
+            return True
+
+    return False
 
 
 def _extract_title(text: str, fallback: str) -> str:
@@ -767,6 +889,59 @@ def _is_generic_flower_term(term: str) -> bool:
     )
 
 
+def _is_bare_maintenance_token_allowed(query_tokens: list[str], token_index: int) -> bool:
+    token = query_tokens[token_index] if 0 <= token_index < len(query_tokens) else ""
+    if token not in MAINTENANCE_LEVEL_TOKENS:
+        return False
+
+    if len(query_tokens) == 1:
+        return True
+
+    previous_token = query_tokens[token_index - 1] if token_index > 0 else ""
+    next_token = query_tokens[token_index + 1] if token_index + 1 < len(query_tokens) else ""
+    return (
+        previous_token in FLOWER_QUERY_TOKENS
+        or next_token in FLOWER_QUERY_TOKENS
+        or previous_token == "maintenance"
+        or next_token == "maintenance"
+    )
+
+
+def _extract_implicit_maintenance_keywords(query: str, flowers: list[dict]) -> list[dict]:
+    normalized_query = _normalize(query)
+    query_tokens = _tokenize(normalized_query)
+    if not query_tokens:
+        return []
+
+    known_levels = {
+        _normalize(value)
+        for flower in flowers
+        for value in flower["maintenance"]
+        if _normalize(value) in MAINTENANCE_LEVEL_TOKENS
+    }
+
+    seen = set()
+    keywords = []
+
+    for index, token in enumerate(query_tokens):
+        if token not in known_levels or not _is_bare_maintenance_token_allowed(query_tokens, index):
+            continue
+
+        display_keyword = f"{token} maintenance"
+        if display_keyword in seen:
+            continue
+        seen.add(display_keyword)
+        keywords.append(
+            {
+                "keyword": display_keyword,
+                "category": "maintenance",
+                "score": 9.8,
+            }
+        )
+
+    return keywords
+
+
 def _is_redundant_keyword(term: str, selected_terms: list[str]) -> bool:
     """
     avoid returning multiple keyword chips that mostly say the same thing
@@ -801,7 +976,12 @@ def _merge_keyword_lists(term_groups: list[list[dict]], limit: int) -> list[dict
 
     for group in term_groups:
         for term in group:
-            keyword = term["keyword"]
+            normalized_term = dict(term)
+            keyword = _format_keyword_for_display(
+                normalized_term.get("category"),
+                normalized_term["keyword"],
+            )
+            normalized_term["keyword"] = keyword
             if _is_generic_flower_term(keyword):
                 continue
 
@@ -842,7 +1022,7 @@ def _merge_keyword_lists(term_groups: list[list[dict]], limit: int) -> list[dict
             insert_at = len(merged) if not replacement_indices else replacement_indices[0]
             for index in reversed(replacement_indices):
                 merged.pop(index)
-            merged.insert(insert_at, term)
+            merged.insert(insert_at, normalized_term)
             if len(merged) >= limit:
                 return merged
 
@@ -873,6 +1053,8 @@ def _top_feature_terms(row, vectorizer: TfidfVectorizer, limit: int) -> list[dic
             break
 
         keyword = feature_names[index]
+        if keyword in MAINTENANCE_LEVEL_TOKENS:
+            continue
         if _is_generic_flower_term(keyword) or _is_redundant_keyword(keyword, selected_keywords):
             continue
 
@@ -962,7 +1144,7 @@ def _metadata_query_phrase_variants(category: str, value: str) -> list[tuple[str
 
     variants = [(normalized_value, normalized_value)]
     if category == "maintenance" and not normalized_value.endswith("maintenance"):
-        variants.insert(0, (f"{normalized_value} maintenance", f"{normalized_value} maintenance"))
+        variants = [(f"{normalized_value} maintenance", f"{normalized_value} maintenance")]
 
     seen = set()
     deduped = []
@@ -1108,6 +1290,8 @@ def _collect_keyword_candidates(flowers: list[dict] | None = None, flower: dict 
             for value in values:
                 if category in {"meaning", "occasion"}:
                     chunks = _split_meaning_chunks(value)
+                elif category == "maintenance":
+                    chunks = [_format_maintenance_value(value)]
                 else:
                     chunks = [value]
 
@@ -1214,15 +1398,115 @@ def _build_query_breakdown_keywords(
         _collect_keyword_candidates(flowers=flowers),
         limit,
     )
+    implicit_maintenance_keywords = _extract_implicit_maintenance_keywords(query, flowers)
     semantic_keywords = _categorize_feature_terms_for_corpus(
         _top_feature_terms(query_word_matrix, word_vectorizer, limit),
         flowers,
     )
 
     return _merge_keyword_lists(
-        [metadata_keywords, morphology_keywords, semantic_keywords],
+        [metadata_keywords, implicit_maintenance_keywords, morphology_keywords, semantic_keywords],
         limit,
     )
+
+
+def _semantic_query_expansion_keywords(
+    query: str,
+    flowers: list[dict],
+    limit: int,
+) -> list[dict]:
+    normalized_query = _normalize(query)
+    query_tokens = set(_tokenize(query))
+    if not normalized_query or not query_tokens:
+        return []
+
+    category_priority = {
+        "color": 0,
+        "maintenance": 1,
+        "plant_type": 2,
+        "occasion": 3,
+        "meaning": 4,
+    }
+
+    expansions = []
+    seen_keywords = set()
+    for category, label in _collect_keyword_candidates(flowers=flowers):
+        label_tokens = _tokenize(label)
+        if not label_tokens:
+            continue
+
+        keyword = _format_keyword_for_display(category, label)
+        normalized_keyword = _normalize(keyword)
+        if not normalized_keyword or normalized_keyword in seen_keywords:
+            continue
+        if re.search(rf"(?<!\w){re.escape(normalized_keyword)}(?!\w)", normalized_query):
+            continue
+
+        semantic_matches = sum(
+            1
+            for token in label_tokens
+            if _semantic_token_matches(query_tokens, token)
+        )
+        if semantic_matches < len(label_tokens):
+            continue
+
+        direct_overlap = len(query_tokens & set(label_tokens))
+        synonym_only_support = semantic_matches - direct_overlap
+        if synonym_only_support <= 0 and len(label_tokens) == 1:
+            continue
+
+        seen_keywords.add(normalized_keyword)
+        expansions.append(
+            {
+                "keyword": keyword,
+                "category": category,
+                "score": round(7.2 + synonym_only_support * 0.45 + len(label_tokens) / 10, 2),
+                "token_count": len(label_tokens),
+                "semantic_gain": synonym_only_support,
+                "priority": category_priority.get(category, 99),
+            }
+        )
+
+    expansions.sort(
+        key=lambda item: (
+            -item["semantic_gain"],
+            -item["token_count"],
+            item["priority"],
+            item["keyword"],
+        )
+    )
+    return expansions[:limit]
+
+
+def _build_semantic_query_text(
+    query: str,
+    query_keywords: list[dict],
+    flowers: list[dict],
+) -> tuple[str, list[dict]]:
+    inferred_keywords = _semantic_query_expansion_keywords(
+        query,
+        flowers,
+        MAX_SEMANTIC_QUERY_EXPANSIONS,
+    )
+    merged_keywords = _merge_keyword_lists(
+        [query_keywords, inferred_keywords],
+        MAX_QUERY_KEYWORDS,
+    )
+
+    normalized_query = _normalize(query)
+    augmented_terms = [query.strip()]
+    for item in merged_keywords:
+        keyword = item["keyword"].strip()
+        normalized_keyword = _normalize(keyword)
+        if not normalized_keyword:
+            continue
+        if re.search(rf"(?<!\w){re.escape(normalized_keyword)}(?!\w)", normalized_query):
+            continue
+
+        repeat_count = 2 if item.get("category") in {"meaning", "occasion"} else 1
+        augmented_terms.extend([keyword] * repeat_count)
+
+    return " ".join(part for part in augmented_terms if part), merged_keywords
 
 
 def _axis_label_key(label: str) -> str:
@@ -1792,8 +2076,7 @@ def _component_labels_from_svd(
 
     for flower in flowers:
         for maintenance in flower["maintenance"]:
-            add_descriptor(maintenance)
-            add_descriptor(f"{maintenance} maintenance")
+            add_descriptor(_format_maintenance_value(maintenance))
         for color in flower["colors"]:
             add_descriptor(color)
         for plant_type in flower["plant_types"]:
@@ -2008,7 +2291,7 @@ def visualizer_flowers(limit: int = 48) -> dict:
                 "scientific_name": flower["scientific_name"],
                 "colors": flower["colors"],
                 "plant_types": flower["plant_types"],
-                "maintenance": flower["maintenance"],
+                "maintenance": _format_maintenance_values(flower["maintenance"]),
                 "meanings": flower["meanings"],
                 "occasions": flower["occasions"],
                 "primary_color": primary_color,
@@ -2097,7 +2380,7 @@ def _build_suggestion(
         "scientific_name": flower["scientific_name"],
         "colors": flower["colors"],
         "plant_types": flower["plant_types"],
-        "maintenance": flower["maintenance"],
+        "maintenance": _format_maintenance_values(flower["maintenance"]),
         "meanings": displayed_meanings,
         "occasions": displayed_occasions,
         # this score is NOT relative to the best result for the same query anymore!
@@ -2133,7 +2416,7 @@ def get_flower_vectors(scientific_names: list[str]) -> dict:
                 "scientific_name": flowers[i]["scientific_name"],
                 "meanings": flowers[i]["meanings"],
                 "colors": flowers[i]["colors"],
-                "maintenance": flowers[i]["maintenance"],
+                "maintenance": _format_maintenance_values(flowers[i]["maintenance"]),
                 "plant_types": flowers[i]["plant_types"],
                 "occasions": flowers[i]["occasions"],
                 "lsa_vector": lsa_matrix[i],
