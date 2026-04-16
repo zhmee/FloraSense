@@ -13,6 +13,7 @@ import { AutocompleteResponse, KeywordUsed, RecommendationResponse } from './typ
 const EMPTY_RESULTS: RecommendationResponse = {
   query: '',
   keywords_used: [],
+  score_scale: 'unit',
   query_latent_radar_chart: null,
   query_latent_radar_axes: [],
   suggestions: [],
@@ -62,6 +63,21 @@ interface AppProps {
 function formatLabel(values: string[] | undefined): string {
   if (!values || values.length === 0) return 'Not listed'
   return values.join(', ')
+}
+
+function formatMaintenanceLabel(values: string[] | undefined): string {
+  if (!values || values.length === 0) return 'Not listed'
+
+  return values
+    .map((value) => {
+      const trimmed = value.trim()
+      const normalized = trimmed.toLowerCase()
+      if (normalized === 'low' || normalized === 'medium' || normalized === 'high') {
+        return `${normalized} maintenance`
+      }
+      return trimmed
+    })
+    .join(', ')
 }
 
 function formatFullText(values: string[]): string {
@@ -218,9 +234,21 @@ function getMatchStrength(score: number, bestScore: number): number {
 }
   */
 
-// Raw score
-function getMatchStrength(score: number): number {
-  return Math.max(Math.min(score/100, 1), 0)
+function getMatchStrength(score: number, scoreScale: RecommendationResponse['score_scale']): number {
+  if (scoreScale === 'unit') {
+    return Math.max(Math.min(score, 1), 0)
+  }
+  return Math.max(Math.min(score / 100, 1), 0)
+}
+
+function formatMatchStrengthLabel(
+  strength: number,
+  scoreScale: RecommendationResponse['score_scale'],
+): string {
+  if (scoreScale === 'unit') {
+    return `${Math.round(strength * 100)}%`
+  }
+  return `${Math.round(strength * 100)}%`
 }
 
 function getQueryBreakdownKeywords(results: RecommendationResponse): KeywordUsed[] {
@@ -858,8 +886,8 @@ function App({ isActive = true }: AppProps): JSX.Element {
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
               {results.suggestions.map((suggestion, index) => {
-                const strength = getMatchStrength(suggestion.score)
-                const strengthLabel = Math.round(strength * 100)
+                const strength = getMatchStrength(suggestion.score, results.score_scale ?? 'percent')
+                const strengthLabel = formatMatchStrengthLabel(strength, results.score_scale ?? 'percent')
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
@@ -903,7 +931,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                       </div>
                       <div className="score-caption">
                         <span>Match strength</span>
-                        <strong>{strengthLabel}%</strong>
+                        <strong>{strengthLabel}</strong>
                       </div>
                     </div>
 
@@ -915,7 +943,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                         </div>
                         <div className="detail-card">
                           <span className="detail-label">Maintenance</span>
-                          <p>{formatLabel(suggestion.maintenance)}</p>
+                          <p>{formatMaintenanceLabel(suggestion.maintenance)}</p>
                         </div>
                         <div className="detail-card">
                           <span className="detail-label">Plant Type</span>

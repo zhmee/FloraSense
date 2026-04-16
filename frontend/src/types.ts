@@ -28,6 +28,7 @@ export interface FlowerSuggestion {
 export interface RecommendationResponse {
   query: string
   keywords_used: KeywordUsed[]
+  score_scale?: 'unit' | 'percent'
   query_latent_radar_chart: string | null
   query_latent_radar_axes: string[]
   suggestions: FlowerSuggestion[]
