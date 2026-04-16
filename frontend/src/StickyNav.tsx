@@ -68,7 +68,7 @@ function StickyNav({ visible, activeView, onViewChange }: StickyNavProps): JSX.E
                 strokeLinejoin="round"
               />
             </svg>
-            Ranker
+            Search
           </button>
           <button
             role="tab"
@@ -86,7 +86,7 @@ function StickyNav({ visible, activeView, onViewChange }: StickyNavProps): JSX.E
               <path d="M9 2.4V9M14.5 5.55L9 9L3.5 5.55" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
               <circle cx="9" cy="9" r="1.55" fill="currentColor" />
             </svg>
-            3D Visualizer
+            3D Visualization
           </button>
         </div>
       </div>

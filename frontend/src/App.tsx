@@ -278,6 +278,9 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const [expandedMeaningCards, setExpandedMeaningCards] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
+  const [resultLimit, setResultLimit] = useState<number>(5)
+  const [appliedLimit, setAppliedLimit] = useState<number>(5)
+  const [searchMethod, setSearchMethod] = useState<'svd' | 'tfidf'>('svd')
   const queryInputRef = useRef<HTMLInputElement | null>(null)
   const appRef = useRef<HTMLElement | null>(null)
   const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
@@ -583,9 +586,10 @@ function App({ isActive = true }: AppProps): JSX.Element {
 
     setLoading(true)
     setError('')
+    setAppliedLimit(resultLimit)
 
     try {
-      const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}`)
+      const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -669,10 +673,9 @@ function App({ isActive = true }: AppProps): JSX.Element {
       <div className="ranker-shell">
         <section className="ranker-intro">
           <div className="hero-copy-block">
-            <p className="eyebrow">Describe a feeling. Discover a flower.</p>
+            <p className="eyebrow">CREATE YOUR QUERY:</p>
             <p className="hero-copy ranker-copy">
-              Describe a mood, color, level of care, and/or meaning, and receive a short ranked set of flower
-              suggestions that feels more curated than filtered.
+              Describe a mood, color, level of care, and/or meaning, and receive a ranked set of flowers matched to your descriptions.
             </p>
 
             <form className="search-panel" onSubmit={handleSubmit}>
@@ -713,6 +716,38 @@ function App({ isActive = true }: AppProps): JSX.Element {
                   {loading ? 'Ranking...' : 'Search'}
                 </button>
               </div>
+              <div className="search-options-row">
+                <div className="limit-selector">
+                  <span className="limit-label">Flowers Per Search:</span>
+                  {[3, 5, 10].map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`limit-chip ${resultLimit === n ? 'is-active' : ''}`}
+                      onClick={() => setResultLimit(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <div className="method-toggle">
+                  <span className="limit-label">Retrieval Method:</span>
+                  <button
+                    type="button"
+                    className={`method-chip ${searchMethod === 'svd' ? 'is-active' : ''}`}
+                    onClick={() => setSearchMethod('svd')}
+                  >
+                    SVD
+                  </button>
+                  <button
+                    type="button"
+                    className={`method-chip ${searchMethod === 'tfidf' ? 'is-active' : ''}`}
+                    onClick={() => setSearchMethod('tfidf')}
+                  >
+                    TF-IDF
+                  </button>
+                </div>
+              </div>
             </form>
 
             <div
@@ -747,7 +782,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
             <div className="hero-note">
               <span>How it works:</span>
               <p>
-                The recommender projects flowers and queries into an SVD-based retrieval space built
+                The recommender projects flowers and queries into your chosen retrieval method space built
                 from meanings, attributes, and flower descriptions, then ranks the closest matches.
               </p>
             </div>
@@ -764,7 +799,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
             Top matched attributes and meanings across the ranked results:
           </p>
 
-          {!loading && results.query_latent_radar_chart && (
+          {!loading && searchMethod === 'svd' && results.query_latent_radar_chart && (
             <figure className="query-radar-panel">
               <div className="query-radar-head">
                 <span>query vector</span>
@@ -805,7 +840,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
               {results.query && !loading && <p>“{results.query}”</p>}
             </div>
             <div className="results-meta">
-              <span>{results.suggestions.length}/5 shown</span>
+            <span>{results.suggestions.length}/{appliedLimit} shown</span>            
             </div>
           </header>
 

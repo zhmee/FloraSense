@@ -18,9 +18,9 @@ from models import db, Episode, Review
 #from flower_recommender_prototype2 import recommend_flowers    # v1 w/ RAKE - Michelle (Need to change requirements.txt)
 
 from flower_recommender_prototype3 import recommend_flowers, visualizer_flowers     # SVD 3 (Latent Semantic Analysis) - Kaustav
-#from flower_recommender_v3 import recommend_flowers            # TF-IDF baseline (Exact Lexical Matching) - Elise (slop)
+from flower_recommender_v3 import recommend_flowers_tfidf                           # TF-IDF baseline (Exact Lexical Matching) - Elise (slop)
 
-from flower_autocomplete import autocomplete_queries            # Autocomplete
+from flower_autocomplete import autocomplete_queries            # Autocomplete TODO: I think we need to refine this or just get rid of it
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
@@ -94,7 +94,13 @@ def register_routes(app):
     @app.route("/api/recommendations")
     def recommendations():
         query = request.args.get("q", "")
-        return jsonify(recommend_flowers(query))
+        method = request.args.get("method", "svd") # SVD or TF-IDF # TODO: IMPLEMENT 
+        limit = request.args.get("limit", default=5, type=int)
+        limit = max(1, min(limit, 20))
+
+        if method == "tfidf":
+            return jsonify(recommend_flowers_tfidf(query, limit=limit))
+        return jsonify(recommend_flowers(query, limit=limit))
 
     @app.route("/api/visualizer-flowers")
     def visualizer():

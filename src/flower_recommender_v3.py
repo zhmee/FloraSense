@@ -41,6 +41,7 @@ from pathlib import Path
 import json
 import os
 
+# TODO: Check dependencies remove unnecessary, also mirror changes to requirements.txt
 import numpy as np
 from nltk.stem import PorterStemmer
 #from sklearn.decomposition import TruncatedSVD
@@ -777,7 +778,7 @@ def _categorize_chip(stem: str, flower: dict) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-def recommend_flowers(query: str, limit: int = 5) -> dict:
+def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
     """
     Full pipeline per request
     -------------------------
