@@ -1,6 +1,6 @@
 """
 FloraSense retrieval system  -  Inverted Index + TF-IDF + Rocchio
-    WIP: Very SLOP right now
+    WIP: Still very SLOP right now
 Dataset: merged.csv  (name, scientific_name, color, planttype,
                        maintenance, meaning, Special Occasions)
 
@@ -22,14 +22,6 @@ IR concepts applied
 - Jaccard similarity         : secondary tiebreaker on token overlap
 - Minimum Edit Distance      : Wagner-Fisher DP for fuzzy color/maintenance
                                typo handling
-
-Design principle
-----------------
-Inverted index  ->  display and keyword categorization  (exact, readable)
-TF-IDF + LSA    ->  retrieval ranking                   (semantic, robust)
-Full prose      ->  TF-IDF corpus only, never shown to user directly
-Display fields  ->  short keyword labels
-These layers never interfere with each other.
 """
 
 import csv
@@ -38,62 +30,20 @@ import re
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
-import json
-import os
 
 # TODO: Check dependencies remove unnecessary, also mirror changes to requirements.txt
 import numpy as np
 from nltk.stem import PorterStemmer
-#from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
-#from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
+
+from utils import resolve_flower_image_url, split_meaning_cell
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
-FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
-
-_IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
-try:
-    _IMAGE_MAP = json.loads(_IMAGE_MAP_PATH.read_text(encoding="utf-8"))
-except Exception:
-    _IMAGE_MAP = {}
-
-_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
-
-_IMAGE_ALIAS_TARGETS = {
-    "arum lily": "calla lily",
-    "pelargonium": "geranium",
-    "zantedeschia": "calla lily",
-}
-
-_IMAGE_GENERIC_TOKENS = {"flower", "flowers", "meaning", "meanings"}
-
-
-
-# Build filename lookup ONCE
-_LOCAL_FLOWER_IMAGE_FILES = {}
-_LOCAL_IMAGE_FILENAMES = set()
-
-for file in FLOWER_IMAGE_DIR.iterdir():
-    if file.suffix.lower() in _IMAGE_EXTENSIONS:
-        key = file.stem.lower()  # e.g. "calla-lily-meaning"
-        _LOCAL_FLOWER_IMAGE_FILES[key] = file.name
-        _LOCAL_IMAGE_FILENAMES.add(file.name)
-
-
-_COLOR_FALLBACK_IMAGE_FILENAMES = {
-    "blue": "blue-flowers-meaning.jpg",
-    "pink": "pink-flowers-meaning.jpg",
-    "purple": "purple-flowers-meaning.jpg",
-    "white": "white-flowers.jpg",
-    "yellow": "yellow-flowers-meaning.jpg",
-}
-
-_GENERIC_FLOWER_IMAGE_FILENAME = "10-most-beautiful-flowers.jpg"
 
 # Number of latent dimensions for SVD / LSA.
 # Most of our flower data lives in far fewer than 40 dimensions (small corpus),
@@ -152,11 +102,6 @@ ROCCHIO_TOP_K = 3     # how many top results to treat as pseudo-relevant
 # Wagner-Fisher MED: max edit distance allowed for fuzzy matching
 MED_THRESHOLD = 2
 
-
-# Max label length: meaning entries shorter than this are clean keyword
-# labels (e.g. "Everlasting love") rather than scraped prose paragraphs
-MAX_LABEL_LEN = 80
-
 MAX_MATCHED_CHIPS  = 8
 MAX_QUERY_KEYWORDS = 10
 
@@ -202,55 +147,8 @@ def _split_csv_cell(value: str) -> list:
 
 
 def _split_meanings(value: str) -> list:
-    """
-    Split semicolon-separated meaning entries.
-    "Deception; Graciousness; snapdragons possess two meanings..."
-    Each chunk becomes a separate entry -- short labels AND long prose
-    both contribute vocabulary to TF-IDF / LSA.
-    """
-    return [p.strip() for p in value.split(";") if p.strip()]
-
-
-def _extract_display_meanings(value: str) -> list:
-    """
-    Extract only the short keyword labels from a meaning string for display.
-    Discards long prose chunks that are scraped web content unsuitable for UI.
-
-    "Deception; Graciousness; snapdragons possess two meanings..."
-    -> ["Deception", "Graciousness"]
-
-    The MAX_LABEL_LEN threshold captures multi-word labels like
-    "Tears of the Virgin Mary" while dropping prose paragraphs.
-    If no short labels exist (all entries are prose), fall back to
-    the first entry truncated to MAX_LABEL_LEN characters.
-    """
-    parts = [p.strip() for p in value.split(";") if p.strip()]
-    short = [p for p in parts if len(p) <= MAX_LABEL_LEN]
-    if short:
-        return short
-    # No short labels --> take the first clause of the prose up to
-    # the first period or comma rather than cutting mid-word
-    first = parts[0] if parts else ""
-    boundary = re.search(r"[.,]", first)
-    if boundary:
-        return [first[:boundary.start()].strip()]
-    return [first] if first else []
-
-
-def _extract_display_occasions(value: str) -> list:
-    """
-    Occasions text is free prose. Take only the first clause (up to the
-    first colon or period) which typically lists the concrete occasions
-    without the surrounding filler sentences.
-
-    "try giving the gift of hydrangeas for: weddings, engagements..."
-    -> ["try giving the gift of hydrangeas for: weddings, engagements"]
-    """
-    if not value.strip():
-        return []
-    # Split on period or newline, keep first non-empty chunk
-    first = re.split(r"\.\s+|\n", value.strip())[0].strip()
-    return [first] if first else []
+    """Delegates to shared split_meaning_cell (semicolons + newlines)."""
+    return split_meaning_cell(value)
 
 
 def _plant_type_aliases(value: str) -> set:
@@ -264,95 +162,6 @@ def _plant_type_aliases(value: str) -> set:
     elif lowered.endswith("s") and len(lowered) > 3:
         aliases.add(lowered[:-1])
     return aliases
-
-# ---------------------------------------------------------------------------
-# Images
-# ---------------------------------------------------------------------------
-
-
-def _image_match_score(candidate: str, local_key: str) -> int:
-    candidate_tokens = [token for token in _tokenize(candidate) if token not in _IMAGE_GENERIC_TOKENS]
-    local_tokens = [token for token in _tokenize(local_key) if token not in _IMAGE_GENERIC_TOKENS]
-    if not candidate_tokens or not local_tokens:
-        return -1
-
-    candidate_token_set = set(candidate_tokens)
-    local_token_set = set(local_tokens)
-    overlap = candidate_token_set & local_token_set
-    if not overlap:
-        return -1
-
-    score = len(overlap) * 10
-    if local_key.startswith(candidate):
-        score += 20
-    elif candidate.startswith(local_key):
-        score += 12
-    elif candidate in local_key or local_key in candidate:
-        score += 6
-
-    if candidate_token_set <= local_token_set:
-        score += 16 - max(0, len(local_token_set) - len(candidate_token_set))
-    elif local_token_set <= candidate_token_set:
-        score += 12 - max(0, len(candidate_token_set) - len(local_token_set))
-
-    return score
-
-def _best_local_image_filename(candidate: str) -> str | None:
-    normalized_candidate = _normalize_image_key(candidate)
-    if not normalized_candidate:
-        return None
-
-    candidates = [normalized_candidate]
-    alias_target = _IMAGE_ALIAS_TARGETS.get(normalized_candidate)
-    if alias_target:
-        candidates.append(_normalize_image_key(alias_target))
-
-    for current_candidate in candidates:
-        direct_match = _LOCAL_FLOWER_IMAGE_FILES.get(current_candidate)
-        if direct_match:
-            return direct_match
-
-    best_score = -1
-    best_filename = None
-    for current_candidate in candidates:
-        for local_key, filename in _LOCAL_FLOWER_IMAGE_FILES.items():
-            score = _image_match_score(current_candidate, local_key)
-            if score > best_score:
-                best_score = score
-                best_filename = filename
-
-    return best_filename if best_score >= 20 else None
-
-def _normalize_image_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-
-def _matching_image_candidates(flower: dict):
-    candidates = []
-
-    if flower.get("name"):
-        candidates.append(("name", flower["name"]))
-
-    if flower.get("scientific_name"):
-        candidates.append(("scientific", flower["scientific_name"]))
-
-    for pt in flower.get("plant_types", []):
-        candidates.append(("plant_type", pt))
-
-    return [(label, _normalize_image_key(c)) for label, c in candidates]
-
-
-def _resolve_flower_image_url(flower: dict) -> str | None:
-    for _, candidate in _matching_image_candidates(flower):
-        filename = _best_local_image_filename(candidate)
-        if filename:
-            return f"/api/flower-images/{filename}"
-
-        for remote_key, remote_url in _IMAGE_MAP.items():
-            normalized_remote_key = _normalize_image_key(remote_key)
-            if candidate == normalized_remote_key or candidate in normalized_remote_key or normalized_remote_key in candidate:
-                return remote_url
-
-    return _fallback_image_url_from_metadata(flower)
 
 # ---------------------------------------------------------------------------
 # TF-IDF Ranking
@@ -373,10 +182,10 @@ def _rank_tfidf(query_tfidf, td_matrix):
     return docs_norm.dot(query_norm.T).squeeze()
 
 
-
-# ---------------------------------------------------------------------------
-# Minimum Edit Distance  (Wagner-Fisher algorithm)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Minimum Edit Distance  (Wagner-Fisher algorithm) 
+# TODO: Keep or remove ? Good for "pruple" but bad if someone wants "rod-shaped"
+# ----------------------------------------------------------------------------
 
 def _med(s: str, t: str) -> int:
     """
@@ -426,6 +235,7 @@ def _fuzzy_match(token: str, known_values: list):
 
 # ---------------------------------------------------------------------------
 # Jaccard similarity
+# TODO: Keep or remove, not using rn
 # ---------------------------------------------------------------------------
 
 def _jaccard(a: set, b: set) -> float:
@@ -453,8 +263,8 @@ def _build_document(flower: dict) -> str:
     This string is what becomes one row in the term-document matrix.
 
     Uses the FULL meanings and occasions (including long prose) for
-    maximum vocabulary coverage for TF-IDF ranking. The display layer
-    uses the separate display_meanings / display_occasions fields.
+    maximum vocabulary coverage for TF-IDF ranking and for the API
+    response (same strings the UI shows with click-to-expand).
     """
     parts = []
     parts += [_normalize(flower["name"])]            * FIELD_REPEAT["name"]
@@ -504,10 +314,8 @@ def _load_model() -> tuple:
                     "colors":           set(),
                     "plant_types":      set(),
                     "maintenance":      set(),
-                    "meanings":         set(),   # full text -- for TF-IDF only
-                    "display_meanings": set(),   # short labels -- for UI
-                    "occasions":        set(),   # full text -- for TF-IDF only
-                    "display_occasions":set(),   # first clause -- for UI
+                    "meanings":         set(),
+                    "occasions":        set(),
                 }
             e = grouped[key]
             if row.get("color", "").strip():
@@ -520,14 +328,10 @@ def _load_model() -> tuple:
             raw_meaning = row.get("meaning", "")
             for m in _split_meanings(raw_meaning):
                 e["meanings"].add(m)
-            for m in _extract_display_meanings(raw_meaning):
-                e["display_meanings"].add(m)
 
             occ = row.get("Special Occasions", "").strip()
             if occ:
                 e["occasions"].add(occ)
-                for d in _extract_display_occasions(occ):
-                    e["display_occasions"].add(d)
 
     # Convert sets -> sorted lists for deterministic output
     flowers = [
@@ -539,9 +343,7 @@ def _load_model() -> tuple:
             "plant_types":       sorted(e["plant_types"]),
             "maintenance":       sorted(e["maintenance"]),
             "meanings":          sorted(e["meanings"]),
-            "display_meanings":  sorted(e["display_meanings"]),
             "occasions":         sorted(e["occasions"]),
-            "display_occasions": sorted(e["display_occasions"]),
         }
         for e in grouped.values()
     ]
@@ -790,10 +592,8 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
     6. Jaccard tiebreaker for near-equal cosine scores
     7. Inverted index -> query breakdown keywords 
     8. Hadamard product -> per-card matched keyword chips (stem -> word map)
-    9. Display meanings: short keyword labels from dataset
-   10. Display occasions: first clause of occasion prose
-   11. Chunking fallback: if a display field has long text remaining,
-       slide a window to extract the most query-relevant passage
+    9. Response meanings / occasions: full strings from the dataset (the
+       frontend handles long text with click-to-expand).
     """
     if not query or not query.strip():
         return {
@@ -840,7 +640,7 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
             *flower["plant_types"], *flower["meanings"], *flower["occasions"],
         ])))
 
-        jaccard_bonus = _jaccard(query_stems, flower_stems) * 5
+        jaccard_bonus = _jaccard(query_stems, flower_stems) * 5 # not used
 
         cosine_score = float(sims[idx]) * 100
         final_score = round(cosine_score, 2) # no jaccard bonus if we want to be consistent with raw sim score
@@ -849,19 +649,15 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
             flower, query_tfidf, td_matrix[idx], vectorizer, stem_to_word
         )
 
-        display_meanings = flower["display_meanings"]
-
-        display_occasions = flower["display_occasions"]
-
         suggestions.append({
             "name": flower["name"],
             "scientific_name": flower["scientific_name"],
             "colors": flower["colors"],
             "plant_types": flower["plant_types"],
             "maintenance": flower["maintenance"],
-            "meanings": display_meanings,
-            "occasions": display_occasions,
-            "image_url": _resolve_flower_image_url(flower),
+            "meanings": flower["meanings"],
+            "occasions": flower["occasions"],
+            "image_url": resolve_flower_image_url(flower),
             "score": final_score,
             "matched_keywords": matched,
             "latent_radar_chart": None

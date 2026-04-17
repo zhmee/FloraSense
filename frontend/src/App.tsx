@@ -86,17 +86,11 @@ function formatFullText(values: string[]): string {
   return combined || 'Not listed'
 }
 
-function formatLongText(values: string[], maxSentences: number = 2): string {
-  if (values.length === 0) return 'Not listed'
-
-  const combined = values.join(' ').replace(/\s+/g, ' ').trim()
-  if (!combined) return 'Not listed'
-
-  const sentences = combined.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [combined]
-  return sentences
-    .slice(0, maxSentences)
-    .map((sentence) => sentence.trim())
-    .join(' ')
+function detailExpandKey(
+  suggestionKey: string,
+  section: 'meaning' | 'occasion' | 'details',
+): string {
+  return `${suggestionKey}::${section}`
 }
 
 interface HighlightProfile {
@@ -303,7 +297,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const [autocompleteLoading, setAutocompleteLoading] = useState<boolean>(false)
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(false)
   const [activeAutocompleteIndex, setActiveAutocompleteIndex] = useState<number>(-1)
-  const [expandedMeaningCards, setExpandedMeaningCards] = useState<Record<string, boolean>>({})
+  const [expandedDetailSections, setExpandedDetailSections] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const [resultLimit, setResultLimit] = useState<number>(5)
@@ -604,7 +598,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
     setAutocompleteLoading(false)
     setActiveAutocompleteIndex(-1)
     queryInputRef.current?.blur()
-    setExpandedMeaningCards({})
+    setExpandedDetailSections({})
 
     if (!trimmedQuery) {
       setResults(EMPTY_RESULTS)
@@ -614,7 +608,6 @@ function App({ isActive = true }: AppProps): JSX.Element {
 
     setLoading(true)
     setError('')
-    setAppliedLimit(resultLimit)
 
     try {
       const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
@@ -624,6 +617,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
 
       const data: RecommendationResponse = await response.json()
       setResults(data)
+      setAppliedLimit(resultLimit)
     } catch (requestError) {
       setResults(EMPTY_RESULTS)
       setError(requestError instanceof Error ? requestError.message : 'Search failed')
@@ -823,15 +817,11 @@ function App({ isActive = true }: AppProps): JSX.Element {
             <p>Query Breakdown</p>
             <span>{queryBreakdownKeywords.length}</span>
           </div>
-          <p className="rail-copy">
-            Top matched attributes and meanings across the ranked results:
-          </p>
 
-          {!loading && searchMethod === 'svd' && results.query_latent_radar_chart && (
+          {!loading && results.query_latent_radar_chart && (
             <figure className="query-radar-panel">
               <div className="query-radar-head">
-                <span>query vector</span>
-                <small>latent svd profile</small>
+                <span>Latent Dimensions</span>
               </div>
               <img
                 src={results.query_latent_radar_chart}
@@ -842,21 +832,23 @@ function App({ isActive = true }: AppProps): JSX.Element {
 
           {loading ? (
             <div className="rail-empty">
-              Projecting the query into the semantic flower space.
+              Projecting the query into the flower space.
             </div>
           ) : queryBreakdownKeywords.length > 0 ? (
-            <div className="keyword-grid">
+            <div className="keyword-chip-list">
               {queryBreakdownKeywords.map((keyword) => (
-                <div key={`${keyword.category}-${keyword.keyword}`} className="keyword-card">
-                  <strong>{keyword.keyword}</strong>
-                  <span>{keyword.category}</span>
-                  <span className="score-pill">+{keyword.score.toFixed(2)}</span>
-                </div>
+                <div
+                key={`${keyword.category}-${keyword.keyword}`}
+                className="match-chip match-chip--rail"
+              >
+                <span>{keyword.keyword}</span>
+                <small>{keyword.category}</small>
+              </div>
               ))}
             </div>
           ) : (
             <div className="rail-empty">
-              {error || 'Run a search to see which semantic terms influenced the ranking.'}
+              {error || 'Run a search to see which terms influenced the ranking!'}
             </div>
           )}
         </aside>
@@ -891,119 +883,171 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
-                const fullOccasionText = formatLongText(suggestion.occasions)
+                const fullOccasionText = formatFullText(suggestion.occasions ?? [])
                 const meaningIsExpandable = fullMeaningText !== 'Not listed' && fullMeaningText.length > 220
-                const isMeaningExpanded = Boolean(expandedMeaningCards[suggestionKey])
+                const occasionIsExpandable = fullOccasionText !== 'Not listed' && fullOccasionText.length > 220
+                const isMeaningExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'meaning')])
+                const isOccasionExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'occasion')])
+                const isDetailsExpanded = Boolean(
+                  expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
+                )
                 const highlightTerms = getHighlightTerms(suggestion.matched_keywords.map((match) => match.keyword))
+                const hasExpandableDetails =
+                  Boolean(suggestion.latent_radar_chart) || suggestion.matched_keywords.length > 0
 
                 return (
                   <article
                     key={suggestionKey}
-                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''} ${suggestion.image_url ? 'has-header-image' : ''}`}
+                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
                   >
-                    <div className="card-topline">
-                      <span className="rank-badge">#{index + 1}</span>
+                    <div className="card-hero">
+                      <div className="card-hero-text">
+                        <div className="card-topline">
+                          <span className="rank-badge">#{index + 1}</span>
+                        </div>
+                        <div className="card-header">
+                          <h2>{displayName}</h2>
+                          <p>{suggestion.scientific_name}</p>
+                        </div>
+                        <div className="score-meter">
+                          <div className="score-meter-bar">
+                            <div className="score-track">
+                              <div
+                                className="score-fill"
+                                data-strength={strength.toFixed(3)}
+                                style={{ transform: `scaleX(${strength.toFixed(3)})` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="score-caption">
+                            <span>Match strength</span>
+                            <strong>{strengthLabel}</strong>
+                          </div>
+                        </div>
+                      </div>
                       {suggestion.image_url && (
-                        <div className="card-image-shell card-image-shell--topline">
-                          <img
-                            className="suggestion-image"
-                            src={suggestion.image_url}
-                            alt={displayName}
-                          />
+                        <div className="card-hero-image">
+                          <img className="suggestion-image" src={suggestion.image_url} alt={displayName} />
                         </div>
                       )}
                     </div>
 
-                    <div className="card-overview">
-                      <div className="card-header">
-                        <h2>{displayName}</h2>
-                        <p>{suggestion.scientific_name}</p>
-                      </div>
-                    </div>
-
-                    <div className="score-meter">
-                      <div className="score-track">
-                        <div
-                          className="score-fill"
-                          data-strength={strength.toFixed(3)}
-                          style={{ transform: `scaleX(${strength.toFixed(3)})` }}
-                        />
-                      </div>
-                      <div className="score-caption">
-                        <span>Match strength</span>
-                        <strong>{strengthLabel}</strong>
-                      </div>
-                    </div>
-
-                    <div className="detail-grid">
-                      <div className="detail-summary">
-                        <div className="detail-card">
+                    <div className="card-metadata">
+                      <div className="card-metadata-attrs" aria-label="Flower attributes">
+                        <div className="detail-card detail-card--compact">
                           <span className="detail-label">Colors</span>
                           <p>{formatLabel(suggestion.colors)}</p>
                         </div>
-                        <div className="detail-card">
+                        <div className="detail-card detail-card--compact">
+                          <span className="detail-label">Plant type</span>
+                          <p>{formatLabel(suggestion.plant_types)}</p>
+                        </div>
+                        <div className="detail-card detail-card--compact">
                           <span className="detail-label">Maintenance</span>
                           <p>{formatMaintenanceLabel(suggestion.maintenance)}</p>
                         </div>
-                        <div className="detail-card">
-                          <span className="detail-label">Plant Type</span>
-                          <p>{formatLabel(suggestion.plant_types)}</p>
+                      </div>
+                      <div className="card-metadata-narrative" aria-label="Meaning and occasions">
+                        <div className="detail-card detail-card--meaning">
+                          <span className="detail-label">Meaning</span>
+                          <div className="detail-copy-group">
+                            <p
+                              className={`detail-copy ${
+                                meaningIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''
+                              }`}
+                            >
+                              {renderHighlightedText(fullMeaningText, highlightTerms)}
+                            </p>
+                            {meaningIsExpandable && (
+                              <button
+                                type="button"
+                                className="detail-toggle"
+                                onClick={() =>
+                                  setExpandedDetailSections((currentState) => {
+                                    const key = detailExpandKey(suggestionKey, 'meaning')
+                                    return { ...currentState, [key]: !currentState[key] }
+                                  })
+                                }
+                              >
+                                {isMeaningExpanded ? 'show less' : 'show full meaning'}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        {suggestion.occasions && (
-                          <div className="detail-card">
+                        {suggestion.occasions && suggestion.occasions.length > 0 && (
+                          <div className="detail-card detail-card--occasions">
                             <span className="detail-label">Occasions</span>
-                            <p>{renderHighlightedText(fullOccasionText, highlightTerms)}</p>
+                            <div className="detail-copy-group">
+                              <p
+                                className={`detail-copy ${
+                                  occasionIsExpandable && !isOccasionExpanded ? 'is-collapsed' : ''
+                                }`}
+                              >
+                                {renderHighlightedText(fullOccasionText, highlightTerms)}
+                              </p>
+                              {occasionIsExpandable && (
+                                <button
+                                  type="button"
+                                  className="detail-toggle"
+                                  onClick={() =>
+                                    setExpandedDetailSections((currentState) => {
+                                      const key = detailExpandKey(suggestionKey, 'occasion')
+                                      return { ...currentState, [key]: !currentState[key] }
+                                    })
+                                  }
+                                >
+                                  {isOccasionExpanded ? 'show less' : 'show full occasions'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
+                    </div>
 
-                      {suggestion.latent_radar_chart && (
-                        <figure className="latent-radar-panel detail-card--radar">
-                          <div className="latent-radar-head">
-                            <span>flower vector</span>
-                            <small>latent svd profile</small>
+                    {hasExpandableDetails && (
+                      <div className="card-details-drawer">
+                        <button
+                          type="button"
+                          className="card-details-toggle"
+                          aria-expanded={isDetailsExpanded}
+                          onClick={() =>
+                            setExpandedDetailSections((currentState) => {
+                              const key = detailExpandKey(suggestionKey, 'details')
+                              return { ...currentState, [key]: !currentState[key] }
+                            })
+                          }
+                        >
+                          {isDetailsExpanded ? 'Hide Details - ' : 'Expand Details +'}
+                        </button>
+                        {isDetailsExpanded && (
+                          <div className="card-details-body">
+                            {suggestion.latent_radar_chart && (
+                              <figure className="latent-radar-panel latent-radar-panel--inline">
+                                <div className="latent-radar-head">
+                                </div>
+                                <img
+                                  src={suggestion.latent_radar_chart}
+                                  alt={`latent svd radar chart for ${displayName.toLowerCase()}. axes: ${(suggestion.latent_radar_axes ?? []).join(', ')}`}
+                                />
+                                <figcaption>{displayName.toLowerCase()} latent profile</figcaption>
+                              </figure>
+                            )}
+                            {suggestion.matched_keywords.length > 0 && (
+                              <div className="match-list match-list--in-details">
+                                {suggestion.matched_keywords.map((match, matchIndex) => (
+                                  <div key={`${match.keyword}-${match.category}-${matchIndex}`} className="match-chip">
+                                    <span>{match.keyword}</span>
+                                    <small>{match.category}</small>
+                                    <strong>+{match.score.toFixed(2)}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <img
-                            src={suggestion.latent_radar_chart}
-                            alt={`latent svd radar chart for ${displayName.toLowerCase()}. axes: ${suggestion.latent_radar_axes.join(', ')}`}
-                          />
-                          <figcaption>flower-only latent profile</figcaption>
-                        </figure>
-                      )}
-
-                      <div className="detail-card detail-card--meaning">
-                        <span className="detail-label">Meaning</span>
-                        <div className="detail-copy-group">
-                          <p className={`detail-copy ${meaningIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''}`}>
-                            {renderHighlightedText(fullMeaningText, highlightTerms)}
-                          </p>
-                          {meaningIsExpandable && (
-                            <button
-                              type="button"
-                              className="detail-toggle"
-                              onClick={() =>
-                                setExpandedMeaningCards((currentState) => ({
-                                  ...currentState,
-                                  [suggestionKey]: !currentState[suggestionKey],
-                                }))
-                              }
-                            >
-                              {isMeaningExpanded ? 'show less' : 'show full meaning'}
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
-                    </div>
-
-                    <div className="match-list">
-                      {suggestion.matched_keywords.map((match, matchIndex) => (
-                        <div key={`${match.keyword}-${match.category}-${matchIndex}`} className="match-chip">
-                          <span>{match.keyword}</span>
-                          <small>{match.category}</small>
-                          <strong>+{match.score.toFixed(2)}</strong>
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </article>
                 )
               })}

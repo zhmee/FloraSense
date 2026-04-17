@@ -23,6 +23,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
+from utils import split_meaning_cell
 from flower_recommender_prototype3 import (
     MAX_SVD_COMPONENTS,
     _build_corpus_docs,
@@ -30,7 +31,6 @@ from flower_recommender_prototype3 import (
     _dedupe_preserve_order,
     _fit_lsa,
     _normalize,
-    _split_meaning_chunks,
     _tokenize,
 )
 
@@ -184,7 +184,7 @@ def _short_query_phrases(texts: list[str], prefix: str) -> list[str]:
     for text in texts:
         # the recommender stores some fields as larger meaning/occasion strings
         # break those into smaller pieces before turning them into suggestions (CHUNKING I THINK)
-        for chunk in _split_meaning_chunks(text):
+        for chunk in split_meaning_cell(text):
             normalized_chunk = _format_autocomplete_phrase(chunk)
             candidate_chunks = [normalized_chunk]
             # split compound metadata so one record can produce several focused prompts

@@ -21,6 +21,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
 import flower_recommender_prototype3 as p3
+from utils import split_meaning_cell
 from flower_radar_chart import build_latent_radar_chart, select_latent_axes
 
 
@@ -90,14 +91,14 @@ SEMANTIC_BENCHMARK_QUERIES = (
 def _meaning_chunks(flower: dict, limit: int = 12) -> list[str]:
     chunks = []
     for meaning in flower["meanings"]:
-        chunks.extend(p3._split_meaning_chunks(meaning))
+        chunks.extend(split_meaning_cell(meaning))
     return p3._dedupe_preserve_order(chunks)[:limit]
 
 
 def _occasion_chunks(flower: dict, limit: int = 10) -> list[str]:
     chunks = []
     for occasion in flower["occasions"]:
-        chunks.extend(p3._split_meaning_chunks(occasion))
+        chunks.extend(split_meaning_cell(occasion))
     return p3._dedupe_preserve_order(chunks)[:limit]
 
 

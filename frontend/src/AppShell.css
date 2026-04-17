@@ -2,7 +2,8 @@
 
 .fs-shell {
   --fs-nav-top: clamp(10px, 2vw, 18px);
-  --fs-nav-height: 68px;
+  /* min-height + vertical padding of .fs-nav__inner (see StickyNav.css) */
+  --fs-nav-height: 88px;
   --fs-nav-gap: 18px;
   --fs-nav-clearance: calc(var(--fs-nav-top) + var(--fs-nav-height) + var(--fs-nav-gap));
   min-height: 100vh;
@@ -34,7 +35,7 @@
 .fs-shell__content {
   position: relative;
   margin-top: -1px;
-  scroll-margin-top: 104px;
+  scroll-margin-top: calc(var(--fs-nav-clearance) + 10px);
 }
 
 .fs-shell__panel {
@@ -112,7 +113,8 @@
 
 @media (max-width: 760px) {
   .fs-shell {
-    --fs-nav-height: 62px;
+    /* 62px min-height + 8px*2 padding on compact nav inner */
+    --fs-nav-height: 78px;
     --fs-nav-gap: 12px;
   }
 

@@ -10,6 +10,7 @@ from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
 from flask import send_from_directory, request, jsonify
+from utils import FLOWER_IMAGE_DIR
 from models import db, Episode, Review
 
 # ------ TODO: Cleanup & Delete old versions, eventually ------
@@ -28,7 +29,6 @@ USE_LLM = False
 # ─────────────────────────────────────────────────────────────────────────────
 
 VISUALIZATION_DIR = Path(__file__).resolve().parent / "3d_visualization"
-FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
 
 
 def json_search(query):

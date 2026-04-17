@@ -16,7 +16,6 @@ import re
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
-import json
 from collections import defaultdict
 
 import numpy as np
@@ -27,36 +26,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
 from flower_radar_chart import build_latent_radar_chart, select_latent_axes
+from utils import is_thematic_slug, resolve_flower_image_url, split_meaning_cell
 
 
 # the file locations
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
 TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_texts"
-FLOWER_IMAGE_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_images"
 SYNONYM_FILE = Path(__file__).resolve().parent / "data" / "synonyms.csv"
 
-# optional external map of scraped page keys -> image URLs
-_IMAGE_MAP_PATH = Path(__file__).resolve().parent.parent / "data_scraping" / "image_map.json"
-try:
-    _IMAGE_MAP = json.loads(_IMAGE_MAP_PATH.read_text(encoding="utf-8"))
-except Exception:
-    _IMAGE_MAP = {}
-
-_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
-_IMAGE_ALIAS_TARGETS = {
-    "arum lily": "calla lily",
-    "pelargonium": "geranium",
-    "zantedeschia": "calla lily",
-}
-_IMAGE_GENERIC_TOKENS = {"flower", "flowers", "meaning", "meanings"}
-_COLOR_FALLBACK_IMAGE_FILENAMES = {
-    "blue": "blue-flowers-meaning.jpg",
-    "pink": "pink-flowers-meaning.jpg",
-    "purple": "purple-flowers-meaning.jpg",
-    "white": "white-flowers.jpg",
-    "yellow": "yellow-flowers-meaning.jpg",
-}
-_GENERIC_FLOWER_IMAGE_FILENAME = "10-most-beautiful-flowers.jpg"
 ENABLE_QUERY_LATENT_DEBUG = False
 
 # configuration values for the model and for the returned UI payload.
@@ -110,31 +87,6 @@ FLOWER_QUERY_TOKENS = {"flower", "flowers"}
 
 # token pattern because we need words for matching/displaying
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-# try to skip "groups of flowers" as we are trying to build a document per flower
-THEMATIC_PREFIXES = (
-    "10-",
-    "chinese-",
-    "christmas-",
-    "easter-",
-    "flower-color-",
-    "flower-of-",
-    "flowers-",
-    "funeral-",
-    "i-love-you-",
-    "japanese-",
-    "june-",
-    "language-of-",
-    "may-",
-    "mothers-day-",
-    "pink-",
-    "purple-",
-    "rare-",
-    "sympathy-",
-    "thank-you",
-    "white-",
-    "yellow-",
-    "blue-",
-)
 
 # START OF TEXT CLEANUP HELPERS
 
@@ -198,39 +150,6 @@ def _load_synonym_index() -> dict[str, set[str]]:
         return {}
 
     return {key: set(values) for key, values in synonym_index.items()}
-
-
-def _normalize_image_key(text: str) -> str:
-    """
-    Normalize image slugs with a small typo fix for scraped filenames.
-    """
-    return _normalize(text).replace("lilly", "lily")
-
-
-def _is_thematic_slug(slug: str) -> bool:
-    return slug.endswith("flowers") or slug.startswith(THEMATIC_PREFIXES)
-
-
-def _load_local_image_index(include_thematic: bool = True) -> tuple[dict[str, str], set[str]]:
-    try:
-        image_map: dict[str, str] = {}
-        filenames: set[str] = set()
-        for path in FLOWER_IMAGE_DIR.iterdir():
-            if not path.is_file() or path.suffix.lower() not in _IMAGE_EXTENSIONS:
-                continue
-            if not include_thematic and _is_thematic_slug(path.stem):
-                continue
-            normalized_key = _normalize_image_key(path.stem)
-            if normalized_key:
-                image_map[normalized_key] = path.name
-            filenames.add(path.name)
-        return image_map, filenames
-    except Exception:
-        return {}, set()
-
-
-_LOCAL_IMAGE_FILES, _LOCAL_IMAGE_FILENAMES = _load_local_image_index(include_thematic=True)
-_LOCAL_FLOWER_IMAGE_FILES, _ = _load_local_image_index(include_thematic=False)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -371,12 +290,8 @@ def _split_csv_cell(value: str) -> list[str]:
 
 
 def _split_meaning_chunks(value: str) -> list[str]:
-    """
-    Split a long meaning string into smaller phrases such as
-    "love; devotion; purity" -> ["love", "devotion", "purity"].
-    """
-    parts = re.split(r"[;\n]+", value or "")
-    return [part.strip(" .:") for part in parts if part.strip(" .:")]
+    """Delegates to utils.split_meaning_cell."""
+    return split_meaning_cell(value)
 
 
 def _split_passages(text: str) -> list[str]:
@@ -496,100 +411,6 @@ def _alias_variants(name: str) -> set[str]:
         variants.add(" ".join([*parts[:-1], plural_last]))
 
     return {variant for variant in variants if variant}
-
-
-def _matching_image_candidates(flower: dict) -> list[tuple[str, str]]:
-    candidates = []
-    flower_key = _normalize_image_key(flower.get("name", ""))
-    if flower_key:
-        candidates.append(("name", flower_key))
-    for alias in flower.get("aliases", set()):
-        normalized_alias = _normalize_image_key(alias)
-        if normalized_alias:
-            candidates.append(("alias", normalized_alias))
-    return candidates
-
-
-def _image_match_score(candidate: str, local_key: str) -> int:
-    candidate_tokens = [token for token in _tokenize(candidate) if token not in _IMAGE_GENERIC_TOKENS]
-    local_tokens = [token for token in _tokenize(local_key) if token not in _IMAGE_GENERIC_TOKENS]
-    if not candidate_tokens or not local_tokens:
-        return -1
-
-    candidate_token_set = set(candidate_tokens)
-    local_token_set = set(local_tokens)
-    overlap = candidate_token_set & local_token_set
-    if not overlap:
-        return -1
-
-    score = len(overlap) * 10
-    if local_key.startswith(candidate):
-        score += 20
-    elif candidate.startswith(local_key):
-        score += 12
-    elif candidate in local_key or local_key in candidate:
-        score += 6
-
-    if candidate_token_set <= local_token_set:
-        score += 16 - max(0, len(local_token_set) - len(candidate_token_set))
-    elif local_token_set <= candidate_token_set:
-        score += 12 - max(0, len(candidate_token_set) - len(local_token_set))
-
-    return score
-
-
-def _best_local_image_filename(candidate: str) -> str | None:
-    normalized_candidate = _normalize_image_key(candidate)
-    if not normalized_candidate:
-        return None
-
-    candidates = [normalized_candidate]
-    alias_target = _IMAGE_ALIAS_TARGETS.get(normalized_candidate)
-    if alias_target:
-        candidates.append(_normalize_image_key(alias_target))
-
-    for current_candidate in candidates:
-        direct_match = _LOCAL_FLOWER_IMAGE_FILES.get(current_candidate)
-        if direct_match:
-            return direct_match
-
-    best_score = -1
-    best_filename = None
-    for current_candidate in candidates:
-        for local_key, filename in _LOCAL_FLOWER_IMAGE_FILES.items():
-            score = _image_match_score(current_candidate, local_key)
-            if score > best_score:
-                best_score = score
-                best_filename = filename
-
-    return best_filename if best_score >= 20 else None
-
-
-def _fallback_image_url_from_metadata(flower: dict) -> str | None:
-    for color in flower.get("colors", []):
-        normalized_color = _normalize(color)
-        filename = _COLOR_FALLBACK_IMAGE_FILENAMES.get(normalized_color)
-        if filename in _LOCAL_IMAGE_FILENAMES:
-            return f"/api/flower-images/{filename}"
-
-    if _GENERIC_FLOWER_IMAGE_FILENAME in _LOCAL_IMAGE_FILENAMES:
-        return f"/api/flower-images/{_GENERIC_FLOWER_IMAGE_FILENAME}"
-
-    return None
-
-
-def _resolve_flower_image_url(flower: dict) -> str | None:
-    for _, candidate in _matching_image_candidates(flower):
-        filename = _best_local_image_filename(candidate)
-        if filename:
-            return f"/api/flower-images/{filename}"
-
-        for remote_key, remote_url in _IMAGE_MAP.items():
-            normalized_remote_key = _normalize_image_key(remote_key)
-            if candidate == normalized_remote_key or candidate in normalized_remote_key or normalized_remote_key in candidate:
-                return remote_url
-
-    return _fallback_image_url_from_metadata(flower)
 
 
 def _join_human(values: list[str]) -> str:
@@ -1976,7 +1797,7 @@ def _is_thematic_file(path: Path) -> bool:
     Return True if a file looks like a category/topic page rather than
     a page about one specific flower.
     """
-    return _is_thematic_slug(path.stem)
+    return is_thematic_slug(path.stem)
 
 
 def _build_corpus_docs() -> list[dict]:
@@ -2014,7 +1835,7 @@ def _build_corpus_docs() -> list[dict]:
 
     # attach image_url to each flower using the optional image map (tolerant matching)
     for flower in flowers:
-        flower["image_url"] = _resolve_flower_image_url(flower)
+        flower["image_url"] = resolve_flower_image_url(flower)
 
     return flowers
 
