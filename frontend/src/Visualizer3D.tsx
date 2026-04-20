@@ -636,6 +636,21 @@ function getBouquetByFlowerId(bouquets: Bouquet[]) {
   const m = new Map<string, string>()
   bouquets.forEach(b => b.memberIds.forEach(id => m.set(id, b.id))); return m
 }
+
+{/* ─── BOUQUET STUFF!!!!!!! ──────────────────────────────────── */}
+function addFlowerToBouquet(
+  prev: string[], flowerId: string, maxSize = 20,
+): string[] {
+  if (prev.includes(flowerId) || prev.length >= maxSize) return prev
+  return [...prev, flowerId]
+}
+
+function removeFlowerFromBouquet(prev: string[], flowerId: string): string[] {
+  return prev.filter(id => id !== flowerId)
+}
+
+
+
 // ─── 2D Layout ────────────────────────────────────────────────────────────────
 
 interface Layout2D {
@@ -1296,6 +1311,14 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
   const introAnimatedRef = useRef(false)
   const bouquetInsightsCacheRef = useRef(new Map<string, BouquetInsightsResponse>())
 
+  // ── BOUQUE PORTION START  ────────────────────────────────────────────────────
+const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
+const [bouquetTrayOpen, setBouquetTrayOpen] = useState(false)
+const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
+const [myBouquetInsightsStatus, setMyBouquetInsightsStatus] = useState<InsightsStatus>('idle')
+
+  // ── BOUQUE PORTION END  ────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!isActive || flowers.length > 0) return
 
@@ -1335,6 +1358,15 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
     setSelectedBouquetId(null)
     setViewportResetToken(token => token + 1)
   }, [])
+//START 
+  const handleAddToBouquet = useCallback((flowerId: string) => {
+  setMyBouquetIds(prev => addFlowerToBouquet(prev, flowerId))
+}, [])
+
+const handleRemoveFromBouquet = useCallback((flowerId: string) => {
+  setMyBouquetIds(prev => removeFlowerFromBouquet(prev, flowerId))
+}, [])
+//END
 
   const selectedFlower = useMemo(() => flowers.find(f => f.id === selectedFlowerId) ?? null, [flowers, selectedFlowerId])
   const selectedBouquet = useMemo(() => bouquets.find(b => b.id === selectedBouquetId) ?? null, [bouquets, selectedBouquetId])
@@ -1407,6 +1439,36 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
     return () => { cancelled = true }
   }, [selectedBouquet, bouquetScientificNames, isActive])
 
+{/* ─── BOUQUET STUFF!!!!!!! ──────────────────────────────────── */}
+const myBouquetScientificNames = useMemo(
+  () => myBouquetIds.map(id => flowersById.get(id)?.scientific_name ?? '').filter(Boolean),
+  [myBouquetIds, flowersById],
+)
+
+useEffect(() => {
+  if (!isActive || !bouquetTrayOpen || myBouquetScientificNames.length < 2) {
+    setMyBouquetInsights(null)
+    setMyBouquetInsightsStatus('idle')
+    return
+  }
+  let cancelled = false
+  setMyBouquetInsightsStatus('loading')
+  fetch('/api/visualizer-bouquet-insights', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scientific_names: myBouquetScientificNames }),
+  })
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+    .then((payload: BouquetInsightsResponse) => {
+      if (cancelled) return
+      setMyBouquetInsights(payload)
+      setMyBouquetInsightsStatus('ready')
+    })
+    .catch(() => { if (!cancelled) setMyBouquetInsightsStatus('error') })
+  return () => { cancelled = true }
+}, [isActive, bouquetTrayOpen, myBouquetScientificNames])
+
+  // ─── My Bouquet insights fetch (END) ─────────────────────────────────────
   useEffect(() => {
     if (!isActive) return
 
@@ -1664,6 +1726,154 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
           </aside>
         ) : null}
       </div>
+
+
+
+{/* ─── BOUQUET STUFF!!!!!!! ──────────────────────────────────── */}
+{selectedFlower ? (
+  <div style={{
+    position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+    zIndex: 10, pointerEvents: 'auto',
+  }}>
+    {myBouquetIds.includes(selectedFlower.id) ? (
+      <button className="viz-hud__action" style={{ color: '#4d6242', borderColor: 'rgba(103,115,84,0.28)' }}>
+        ✓ In my bouquet
+      </button>
+    ) : (
+      <button className="viz-hud__action" onClick={() => handleAddToBouquet(selectedFlower.id)}>
+        + Add to my bouquet
+      </button>
+    )}
+  </div>
+) : null}
+
+{/* ─── My Bouquet tray (additive) ─────────────────────────────────────────── */}
+<div style={{
+  position: 'fixed', bottom: 28, left: 28, zIndex: 20,
+  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
+  maxWidth: 360,
+}}>
+  {/* Tray pill */}
+  <button
+    className="viz-hud__action"
+    onClick={() => setBouquetTrayOpen(o => !o)}
+    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+  >
+    <span>🌸 My Bouquet</span>
+    {myBouquetIds.length > 0 && (
+      <span style={{
+        background: 'rgba(184,107,79,0.14)', color: '#b86b4f',
+        fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '2px 8px',
+      }}>
+        {myBouquetIds.length}
+      </span>
+    )}
+  </button>
+
+  {/* Expanded tray */}
+  {bouquetTrayOpen && (
+    <div className="viz-hud__badge" style={{ width: 320, borderRadius: 28, padding: '16px 18px' }}>
+      <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--viz-ink)' }}>
+        My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''})
+      </h4>
+
+      {/* Flower chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {myBouquetIds.length === 0 && (
+          <span style={{ fontSize: 12, color: 'var(--viz-muted)' }}>
+            Select a flower and click "+ Add to my bouquet"
+          </span>
+        )}
+        {myBouquetIds.map(id => {
+          const f = flowersById.get(id)
+          if (!f) return null
+          return (
+            <button
+              key={id}
+              onClick={() => handleRemoveFromBouquet(id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', borderRadius: 999,
+                border: '1px solid rgba(108,86,62,0.18)',
+                background: 'rgba(255,252,248,0.95)',
+                fontSize: 12, color: 'var(--viz-ink)',
+                cursor: 'pointer',
+              }}
+              title="Click to remove"
+            >
+              <span style={{
+                width: 10, height: 10, borderRadius: '50%',
+                background: getFlowerColorHex(f), display: 'inline-block',
+              }} />
+              {formatFlowerDisplayName(f.name)}
+              <span style={{ color: 'var(--viz-muted)', marginLeft: 2 }}>×</span>
+            </button>
+          )
+        })}
+      </div>
+{/* Meaning bars */}
+{myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
+  <div style={{ marginBottom: 12 }}>
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+      Meaning balance
+    </div>
+    <div className="viz-chip-list">
+      {myBouquetInsights.meanings.slice(0, 4).map(m => (
+        <span key={m.label} className="viz-chip">{toTitleCase(m.label)}</span>
+      ))}
+    </div>
+  </div>
+)}
+    {myBouquetInsightsStatus === 'ready' && myBouquetInsights && (myBouquetInsights.recommendations ?? []).length > 0 && (
+  <div>
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+      Recommended additions
+    </div>
+    <div className="viz-recommendation-list">
+      {(myBouquetInsights.recommendations ?? []).slice(0, 3).map(rec => {
+        const atlasFlower = flowersByScientificName.get(normalizeKey(rec.scientific_name))
+        return (
+          <div key={rec.scientific_name} className="viz-recommendation-card">
+            <div className="viz-recommendation-card__head">
+              <div className="viz-recommendation-card__identity">
+                {rec.image_url ? (
+                  <img className="viz-recommendation-card__thumb" src={rec.image_url} alt={formatFlowerDisplayName(rec.name)} />
+                ) : null}
+                <div>
+                  <strong>{formatFlowerDisplayName(rec.name)}</strong>
+                  <span>{rec.scientific_name}</span>
+                </div>
+              </div>
+              <em>{toScoreLabel(rec.score)}</em>
+            </div>
+            <div className="viz-chip-list">
+              {rec.matched_keywords.slice(0, 2).map(kw => (
+                <span key={kw.keyword} className="viz-chip">{kw.keyword}</span>
+              ))}
+            </div>
+            {atlasFlower && (
+              <button
+                type="button"
+                className="viz-toolbar__button viz-toolbar__button--compact"
+                onClick={() => { handleFlowerSelect(atlasFlower.id); setBouquetTrayOpen(false) }}
+              >
+                Focus in 3D Visualizer
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  </div>
+)}
+      {myBouquetIds.length < 2 && (
+        <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
+      )}
+    </div>
+  )}
+</div>
+
+{/* ADDED NEWLY */}
     </section>
   )
 }
