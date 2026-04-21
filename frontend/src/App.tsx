@@ -838,12 +838,15 @@ function App({ isActive = true }: AppProps): JSX.Element {
             <div className="keyword-chip-list">
               {queryBreakdownKeywords.map((keyword) => (
                 <div
-                key={`${keyword.category}-${keyword.keyword}`}
-                className="match-chip match-chip--rail"
-              >
-                <span>{keyword.keyword}</span>
-                <small>{keyword.category}</small>
-              </div>
+                  key={`${keyword.category}-${keyword.keyword}`}
+                  className="match-chip match-chip--rail"
+                >
+                  <div className="match-chip__head">
+                    <span>{keyword.keyword}</span>
+                    <small>{keyword.category}</small>
+                  </div>
+                  {keyword.explanation && <p>{keyword.explanation}</p>}
+                </div>
               ))}
             </div>
           ) : (
@@ -883,9 +886,14 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
+                const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
+                const narrativeText = queryFitExplanation || fullMeaningText
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
-                const meaningIsExpandable = fullMeaningText !== 'Not listed' && fullMeaningText.length > 220
-                const occasionIsExpandable = fullOccasionText !== 'Not listed' && fullOccasionText.length > 220
+                const queryFitOccasionSummary = suggestion.query_fit_occasion_summary?.trim() ?? ''
+                const occasionText = queryFitOccasionSummary || fullOccasionText
+                const narrativeIsExpandable = narrativeText !== 'Not listed' && narrativeText.length > 220
+                const hasOccasionText = occasionText !== 'Not listed' && occasionText.length > 0
+                const occasionIsExpandable = hasOccasionText && occasionText.length > 220
                 const isMeaningExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'meaning')])
                 const isOccasionExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'occasion')])
                 const isDetailsExpanded = Boolean(
@@ -948,17 +956,19 @@ function App({ isActive = true }: AppProps): JSX.Element {
                         </div>
                       </div>
                       <div className="card-metadata-narrative" aria-label="Meaning and occasions">
-                        <div className="detail-card detail-card--meaning">
-                          <span className="detail-label">Meaning</span>
+                        <div className="detail-card detail-card--meaning detail-card--explanation">
+                          <span className="detail-label">
+                            {queryFitExplanation ? 'Why this matches' : 'Meaning'}
+                          </span>
                           <div className="detail-copy-group">
                             <p
                               className={`detail-copy ${
-                                meaningIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''
+                                narrativeIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''
                               }`}
                             >
-                              {renderHighlightedText(fullMeaningText, highlightTerms)}
+                              {renderHighlightedText(narrativeText, highlightTerms)}
                             </p>
-                            {meaningIsExpandable && (
+                            {narrativeIsExpandable && (
                               <button
                                 type="button"
                                 className="detail-toggle"
@@ -969,21 +979,23 @@ function App({ isActive = true }: AppProps): JSX.Element {
                                   })
                                 }
                               >
-                                {isMeaningExpanded ? 'show less' : 'show full meaning'}
+                                {isMeaningExpanded ? 'show less' : 'show full explanation'}
                               </button>
                             )}
                           </div>
                         </div>
-                        {suggestion.occasions && suggestion.occasions.length > 0 && (
+                        {hasOccasionText && (
                           <div className="detail-card detail-card--occasions">
-                            <span className="detail-label">Occasions</span>
+                            <span className="detail-label">
+                              {queryFitOccasionSummary ? 'Occasion fit' : 'Occasions'}
+                            </span>
                             <div className="detail-copy-group">
                               <p
                                 className={`detail-copy ${
                                   occasionIsExpandable && !isOccasionExpanded ? 'is-collapsed' : ''
                                 }`}
                               >
-                                {renderHighlightedText(fullOccasionText, highlightTerms)}
+                                {renderHighlightedText(occasionText, highlightTerms)}
                               </p>
                               {occasionIsExpandable && (
                                 <button
@@ -996,7 +1008,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                                     })
                                   }
                                 >
-                                  {isOccasionExpanded ? 'show less' : 'show full occasions'}
+                                  {isOccasionExpanded ? 'show less' : 'show full occasion summary'}
                                 </button>
                               )}
                             </div>

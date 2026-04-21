@@ -4,6 +4,7 @@ Routes: React app serving and episode search API.
 To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
 import json
+import logging
 import os
 from functools import lru_cache
 from importlib.machinery import SourceFileLoader
@@ -13,20 +14,12 @@ from flask import send_from_directory, request, jsonify
 from utils import FLOWER_IMAGE_DIR
 from models import db, Episode, Review
 
-# ------ TODO: Cleanup & Delete old versions, eventually ------
-#from flower_recommender import recommend_flowers               # Base Non-SVD Kaustav Version
-#from flower_recommender_prototype import recommend_flowers     # SVD v1 - Elise
-#from flower_recommender_prototype2 import recommend_flowers    # v1 w/ RAKE - Michelle (Need to change requirements.txt)
-
-from flower_recommender_prototype4 import recommend_flowers, visualizer_flowers     # SVD 4 semantic-first CSV model
-from flower_recommender_v3 import recommend_flowers_tfidf                           # TF-IDF baseline (Exact Lexical Matching) - Elise (slop)
-
-from flower_autocomplete import autocomplete_queries            # Autocomplete TODO: I think we need to refine this or just get rid of it
-
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
 # USE_LLM = True
 # ─────────────────────────────────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
 
 VISUALIZATION_DIR = Path(__file__).resolve().parent / "3d_visualization"
 
@@ -60,6 +53,84 @@ def _load_python_source(module_name, source_path):
 
 
 @lru_cache(maxsize=1)
+def _load_search_modules():
+    from flower_autocomplete import autocomplete_queries
+    from flower_recommender_prototype4 import recommend_flowers, visualizer_flowers
+    from flower_recommender_v3 import recommend_flowers_tfidf
+
+    return {
+        "recommend_flowers": recommend_flowers,
+        "recommend_flowers_tfidf": recommend_flowers_tfidf,
+        "visualizer_flowers": visualizer_flowers,
+        "autocomplete_queries": autocomplete_queries,
+    }
+
+
+def _normalize_recommendation_payload(payload, query: str) -> dict:
+    normalized = dict(payload or {})
+    normalized["query"] = normalized.get("query", query)
+    normalized["keywords_used"] = normalized.get("keywords_used", [])
+    normalized["query_latent_radar_chart"] = normalized.get("query_latent_radar_chart")
+    normalized["query_latent_radar_axes"] = normalized.get("query_latent_radar_axes", [])
+    normalized["keywords_used"] = [
+        {
+            **dict(item),
+            "explanation": dict(item).get("explanation", ""),
+            "explanation_source": dict(item).get("explanation_source", ""),
+        }
+        for item in normalized["keywords_used"]
+        if isinstance(item, dict)
+    ]
+
+    suggestions = []
+    for suggestion in normalized.get("suggestions", []) or []:
+        item = dict(suggestion)
+        item["matched_keywords"] = item.get("matched_keywords", [])
+        item["latent_radar_chart"] = item.get("latent_radar_chart")
+        item["latent_radar_axes"] = item.get("latent_radar_axes", [])
+        item["query_fit_explanation"] = item.get("query_fit_explanation", "")
+        item["query_fit_occasion_summary"] = item.get("query_fit_occasion_summary", "")
+        item["occasion_summary_source"] = item.get("occasion_summary_source", "")
+        suggestions.append(item)
+    normalized["suggestions"] = suggestions
+
+    if "score_scale" not in normalized:
+        scores = [
+            float(suggestion.get("score", 0) or 0)
+            for suggestion in suggestions
+        ]
+        normalized["score_scale"] = "unit" if scores and max(scores) <= 1.0 else "percent"
+
+    return normalized
+
+
+def _add_recommendation_explanations(payload: dict) -> dict:
+    try:
+        from flower_explanations import add_query_fit_explanations
+
+        return add_query_fit_explanations(payload)
+    except Exception:
+        logger.exception("Could not build query-aware recommendation explanations.")
+        return payload
+
+
+def _recommend_with_fallback(query: str, limit: int, method: str) -> dict:
+    modules = _load_search_modules()
+
+    if method == "tfidf":
+        payload = modules["recommend_flowers_tfidf"](query, limit=limit)
+        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+
+    try:
+        payload = modules["recommend_flowers"](query, limit=limit)
+        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+    except Exception:
+        logger.exception("SVD recommendations failed for query %r. Falling back to TF-IDF.", query)
+        payload = modules["recommend_flowers_tfidf"](query, limit=limit)
+        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+
+
+@lru_cache(maxsize=1)
 def _load_visualizer_insight_modules():
     return {
         "health": _load_python_source(
@@ -84,7 +155,11 @@ def register_routes(app):
 
     @app.route("/api/config")
     def config():
-        return jsonify({"use_llm": USE_LLM})
+        return jsonify(
+            {
+                "use_llm": USE_LLM,
+            }
+        )
 
     @app.route("/api/episodes")
     def episodes_search():
@@ -97,15 +172,13 @@ def register_routes(app):
         method = request.args.get("method", "svd") # SVD or TF-IDF # TODO: IMPLEMENT 
         limit = request.args.get("limit", default=5, type=int)
         limit = max(1, min(limit, 20))
-
-        if method == "tfidf":
-            return jsonify(recommend_flowers_tfidf(query, limit=limit))
-        return jsonify(recommend_flowers(query, limit=limit))
+        return jsonify(_recommend_with_fallback(query, limit, method))
 
     @app.route("/api/visualizer-flowers")
     def visualizer():
         limit = request.args.get("limit", default=48, type=int)
-        return jsonify(visualizer_flowers(limit=limit))
+        modules = _load_search_modules()
+        return jsonify(modules["visualizer_flowers"](limit=limit))
 
     @app.route("/api/flower-images/<path:filename>")
     def flower_image(filename):
@@ -142,7 +215,8 @@ def register_routes(app):
     @app.route("/api/autocomplete")
     def autocomplete():
         query = request.args.get("q", "")
-        return jsonify(autocomplete_queries(query))
+        modules = _load_search_modules()
+        return jsonify(modules["autocomplete_queries"](query))
 
     if USE_LLM:
         from llm_routes import register_chat_route

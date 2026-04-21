@@ -74,6 +74,97 @@ MAINTENANCE_HINT_TOKENS = {
     "maintenance",
     "upkeep",
 }
+STRUCTURAL_QUERY_TERMS = {
+    "mean",
+    "meaning",
+    "meanings",
+    "means",
+    "represent",
+    "represents",
+    "symbol",
+    "symbolize",
+    "symbolizes",
+}
+QUERY_FOCUS_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "be",
+    "been",
+    "being",
+    "can",
+    "could",
+    "do",
+    "does",
+    "don",
+    "for",
+    "give",
+    "have",
+    "i",
+    "in",
+    "is",
+    "it",
+    "kind",
+    "like",
+    "looking",
+    "me",
+    "need",
+    "of",
+    "or",
+    "please",
+    "require",
+    "requires",
+    "show",
+    "some",
+    "something",
+    "sort",
+    "t",
+    "that",
+    "the",
+    "thing",
+    "things",
+    "this",
+    "to",
+    "too",
+    "want",
+    "with",
+}
+QUERY_TOKEN_ALIASES = {
+    "maintanence": "maintenance",
+    "maintenence": "maintenance",
+    "maintainance": "maintenance",
+    "miantenance": "maintenance",
+}
+NEGATED_HIGH_MAINTENANCE_PATTERNS = (
+    r"\b(?:not|no|avoid|without)\s+(?:a\s+)?high\s+maintenance\b",
+    r"\b(?:not|no|avoid|without)\s+(?:a\s+)?high\s+care\b",
+    r"\b(?:not|no|avoid|without)\s+(?:a\s+)?high\s+upkeep\b",
+    r"\bnot\s+hard\s+to\s+(?:maintain|care\s+for|grow)\b",
+    r"\bnot\s+(?:a\s+)?lot\s+of\s+care\b",
+    r"\b(?:don['’]?t|do\s+not|doesn['’]?t|does\s+not|shouldn['’]?t|should\s+not|can['’]?t|cannot|can\s+not)\s+(?:require|need|take|demand)\s+(?:too\s+much|that\s+much|much|a\s+lot\s+of|lots\s+of)\s+(?:care|maintenance|upkeep|attention|effort)\b",
+    r"\b(?:not|without)\s+(?:too\s+much|that\s+much|much|a\s+lot\s+of|lots\s+of)\s+(?:care|maintenance|upkeep|attention|effort)\b",
+)
+NEGATED_LOW_MAINTENANCE_PATTERNS = (
+    r"\b(?:not|no|avoid|without)\s+(?:a\s+)?low\s+maintenance\b",
+    r"\b(?:not|no|avoid|without)\s+(?:an\s+)?easy\s+(?:care|maintenance|upkeep)\b",
+    r"\bnot\s+easy\s+to\s+(?:maintain|care\s+for|grow)\b",
+)
+LOW_MAINTENANCE_INTENT_PATTERNS = NEGATED_HIGH_MAINTENANCE_PATTERNS + (
+    r"\blow\s+maintenance\b",
+    r"\blow\s+(?:care|upkeep|effort)\b",
+    r"\b(?:easy|easier)\s+(?:care|maintenance|upkeep)\b",
+    r"\b(?:easy|easier)\s+to\s+(?:maintain|care\s+for|grow)\b",
+    r"\b(?:little|minimal|less)\s+(?:care|maintenance|upkeep|attention|effort)\b",
+)
+HIGH_MAINTENANCE_INTENT_PATTERNS = NEGATED_LOW_MAINTENANCE_PATTERNS + (
+    r"\bhigh\s+maintenance\b",
+    r"\bhigh\s+(?:care|upkeep|effort)\b",
+    r"\bhard\s+to\s+(?:maintain|care\s+for|grow)\b",
+    r"\b(?:much|a\s+lot\s+of|lots\s+of)\s+(?:care|maintenance|upkeep|attention|effort)\b",
+)
 SEMANTIC_BENCHMARK_QUERIES = (
     "a flower for secret love",
     "something for remembrance of a missing friend",
@@ -86,6 +177,172 @@ SEMANTIC_BENCHMARK_QUERIES = (
     "gratitude",
     "loveliness",
 )
+
+
+def _canonicalize_query_terms(query: str) -> str:
+    canonical_query = query
+    for typo, replacement in QUERY_TOKEN_ALIASES.items():
+        canonical_query = re.sub(rf"\b{re.escape(typo)}\b", replacement, canonical_query, flags=re.IGNORECASE)
+    return canonical_query
+
+
+def _rewrite_negated_maintenance_query(query: str) -> str:
+    rewritten = query
+    for pattern in NEGATED_HIGH_MAINTENANCE_PATTERNS:
+        rewritten = re.sub(pattern, "low maintenance", rewritten, flags=re.IGNORECASE)
+    for pattern in NEGATED_LOW_MAINTENANCE_PATTERNS:
+        rewritten = re.sub(pattern, "high maintenance", rewritten, flags=re.IGNORECASE)
+    return rewritten
+
+
+def _keyword_focus_query(query: str, maintenance_preference: str | None = None) -> str:
+    tokens = []
+    for token in p3._tokenize(query):
+        token = QUERY_TOKEN_ALIASES.get(token, token)
+        if token in QUERY_FOCUS_STOPWORDS or token in STRUCTURAL_QUERY_TERMS:
+            continue
+        if p3._is_generic_flower_term(token):
+            continue
+        tokens.append(token)
+
+    target_keyword = _target_maintenance_keyword(maintenance_preference)
+    if target_keyword:
+        target_tokens = p3._tokenize(target_keyword)
+        target_token_set = set(target_tokens)
+        if not target_token_set <= set(tokens):
+            tokens.extend(token for token in target_tokens if token not in tokens)
+
+    return " ".join(tokens) or query.strip()
+
+
+def _detect_maintenance_preference(query: str) -> str | None:
+    for pattern in NEGATED_HIGH_MAINTENANCE_PATTERNS:
+        if re.search(pattern, query, flags=re.IGNORECASE):
+            return "low"
+    for pattern in NEGATED_LOW_MAINTENANCE_PATTERNS:
+        if re.search(pattern, query, flags=re.IGNORECASE):
+            return "high"
+    for pattern in LOW_MAINTENANCE_INTENT_PATTERNS:
+        if re.search(pattern, query, flags=re.IGNORECASE):
+            return "low"
+    for pattern in HIGH_MAINTENANCE_INTENT_PATTERNS:
+        if re.search(pattern, query, flags=re.IGNORECASE):
+            return "high"
+    return None
+
+
+def _maintenance_level_for_keyword(keyword: str) -> str | None:
+    normalized_keyword = p3._normalize(keyword)
+    tokens = set(p3._tokenize(normalized_keyword))
+    if not normalized_keyword or not tokens:
+        return None
+    if "low" in tokens or tokens & {"easy", "easier", "minimal", "little", "less"}:
+        return "low"
+    if "high" in tokens or tokens & {"hard", "difficult", "heavy", "much"}:
+        return "high"
+    if "medium" in tokens or tokens & {"moderate", "average"}:
+        return "medium"
+    return None
+
+
+def _target_maintenance_keyword(preference: str | None) -> str | None:
+    if preference == "low":
+        return "low maintenance"
+    if preference == "high":
+        return "high maintenance"
+    return None
+
+
+def _apply_maintenance_preference_to_keywords(
+    keywords: list[dict],
+    preference: str | None,
+) -> list[dict]:
+    target_keyword = _target_maintenance_keyword(preference)
+    if preference not in {"low", "high"} or target_keyword is None:
+        return keywords
+
+    filtered_keywords = []
+    target_present = False
+    for item in keywords:
+        if item.get("category") != "maintenance":
+            filtered_keywords.append(item)
+            continue
+
+        keyword = item.get("keyword", "")
+        level = _maintenance_level_for_keyword(keyword)
+        if level and level != preference:
+            continue
+
+        normalized_keyword = p3._normalize(keyword)
+        target_present = target_present or normalized_keyword == target_keyword
+        filtered_keywords.append(item)
+
+    if not target_present:
+        filtered_keywords.append(
+            {
+                "keyword": target_keyword,
+                "category": "maintenance",
+                "score": 12.0,
+            }
+        )
+
+    return p3._merge_keyword_lists([filtered_keywords], p3.MAX_QUERY_KEYWORDS)
+
+
+def _flower_maintenance_levels(flower: dict) -> set[str]:
+    levels = set()
+    for value in flower.get("maintenance", []) or []:
+        normalized_value = p3._normalize(value)
+        if normalized_value in {"low", "medium", "high"}:
+            levels.add(normalized_value)
+    return levels
+
+
+def _maintenance_preference_bonus(preference: str | None, flower: dict) -> float:
+    if preference not in {"low", "high"}:
+        return 0.0
+
+    levels = _flower_maintenance_levels(flower)
+    if not levels:
+        return 0.0
+    if preference in levels:
+        return 0.55
+    if "medium" in levels:
+        return -0.18
+    if (preference == "low" and "high" in levels) or (preference == "high" and "low" in levels):
+        return -0.75
+    return 0.0
+
+
+def _query_backed_axis_positions(axis_labels: list[str], query_keywords: list[dict]) -> list[int]:
+    query_label_keys = {
+        p3._axis_label_key(item.get("keyword", ""))
+        for item in query_keywords
+        if p3._axis_label_key(item.get("keyword", ""))
+    }
+    if not query_label_keys:
+        return []
+
+    return [
+        position
+        for position, label in enumerate(axis_labels)
+        if p3._axis_label_key(label) in query_label_keys
+    ]
+
+
+def _is_structural_query_keyword(item: dict) -> bool:
+    keyword_tokens = set(p3._tokenize(item.get("keyword", "")))
+    if not keyword_tokens:
+        return True
+    return bool(keyword_tokens & STRUCTURAL_QUERY_TERMS)
+
+
+def _filter_structural_query_keywords(keywords: list[dict]) -> list[dict]:
+    return [
+        item
+        for item in keywords
+        if not _is_structural_query_keyword(item)
+    ]
 
 
 def _meaning_chunks(flower: dict, limit: int = 12) -> list[str]:
@@ -409,10 +666,15 @@ def _semantic_facet_keywords(
     return keywords[:limit]
 
 
-def _filter_query_keywords_for_facets(query_keywords: list[dict], facet_keywords: list[dict]) -> list[dict]:
+def _filter_query_keywords_for_facets(
+    query_keywords: list[dict],
+    facet_keywords: list[dict],
+    query: str = "",
+) -> list[dict]:
     if not facet_keywords:
         return query_keywords
 
+    normalized_query = p3._normalize(query)
     facet_keys = {
         (item.get("category"), p3._normalize(item.get("keyword", "")))
         for item in facet_keywords
@@ -432,6 +694,7 @@ def _filter_query_keywords_for_facets(query_keywords: list[dict], facet_keywords
             token_count <= 1
             and category in {"meaning", "occasion", "semantic"}
             and "maintenance" in facet_categories
+            and not _keyword_in_query(keyword, normalized_query)
         ):
             continue
         filtered_keywords.append(
@@ -447,9 +710,13 @@ def _filter_query_keywords_for_facets(query_keywords: list[dict], facet_keywords
 
 def _build_semantic_query_text(query: str, query_keywords: list[dict], facet_keywords: list[dict]) -> tuple[str, list[dict]]:
     merged_keywords = p3._merge_keyword_lists(
-        [_filter_query_keywords_for_facets(query_keywords, facet_keywords), facet_keywords],
+        [
+            _filter_query_keywords_for_facets(query_keywords, facet_keywords, query),
+            _filter_structural_query_keywords(facet_keywords),
+        ],
         p3.MAX_QUERY_KEYWORDS,
     )
+    merged_keywords = _filter_structural_query_keywords(merged_keywords)
     facet_keys = {
         (item.get("category"), p3._normalize(item.get("keyword", "")))
         for item in facet_keywords
@@ -533,6 +800,18 @@ def _semantic_metadata_bonus(query_keywords: list[dict], flower: dict) -> float:
 
         category_weight = 0.45 if category in {"meaning", "occasion"} else 0.18
         bonus += category_weight * best_match
+
+    # Special boost for roses when love-related keywords are present
+    flower_name = flower.get("name", "").lower()
+    is_rose = "rose" in flower_name
+    has_love_keywords = any(
+        "love" in p3._normalize(kw.get("keyword", "")) 
+        for kw in query_keywords 
+        if kw.get("category") == "meaning"
+    )
+    
+    if is_rose and has_love_keywords:
+        bonus += 0.5  # Cultural boost for roses and love
 
     return bonus
 
@@ -683,6 +962,11 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     if not query or not query.strip():
         return _empty_response(query)
 
+    canonical_query = _canonicalize_query_terms(query)
+    maintenance_preference = _detect_maintenance_preference(canonical_query)
+    retrieval_query = _rewrite_negated_maintenance_query(canonical_query)
+    keyword_query = _keyword_focus_query(retrieval_query, maintenance_preference)
+
     (
         flowers,
         word_vectorizer,
@@ -696,22 +980,24 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
         facet_word_matrix,
         facet_lsa,
     ) = _load_model()
-    raw_query_word_matrix = word_vectorizer.transform([query])
+    raw_query_word_matrix = word_vectorizer.transform([keyword_query])
 
     if raw_query_word_matrix.nnz == 0 or svd is None or lsa_matrix is None:
         return _empty_response(query)
 
     raw_query_lsa = normalize(svd.transform(raw_query_word_matrix), norm="l2")
     base_query_keywords = p3._build_query_breakdown_keywords(
-        query,
+        retrieval_query,
         raw_query_word_matrix,
         word_vectorizer,
         flowers,
         p3.MAX_QUERY_KEYWORDS,
     )
-    locked_categories = _locked_facet_categories(query, base_query_keywords)
+    base_query_keywords = _filter_structural_query_keywords(base_query_keywords)
+    base_query_keywords = _apply_maintenance_preference_to_keywords(base_query_keywords, maintenance_preference)
+    locked_categories = _locked_facet_categories(retrieval_query, base_query_keywords)
     facet_keywords = _semantic_facet_keywords(
-        query,
+        keyword_query,
         raw_query_word_matrix,
         raw_query_lsa,
         facet_entries,
@@ -720,7 +1006,10 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
         locked_categories,
         MAX_QUERY_EXPANSIONS,
     )
-    semantic_query_text, query_keywords = _build_semantic_query_text(query, base_query_keywords, facet_keywords)
+    facet_keywords = _filter_structural_query_keywords(facet_keywords)
+    facet_keywords = _apply_maintenance_preference_to_keywords(facet_keywords, maintenance_preference)
+    semantic_query_text, query_keywords = _build_semantic_query_text(keyword_query, base_query_keywords, facet_keywords)
+    query_keywords = _apply_maintenance_preference_to_keywords(query_keywords, maintenance_preference)
     query_word_matrix = word_vectorizer.transform([semantic_query_text])
 
     if query_word_matrix.nnz == 0:
@@ -735,7 +1024,9 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     )
     similarities = np.asarray(
         [
-            float(display_similarities[index]) + _semantic_metadata_bonus(query_keywords, flowers[index])
+            float(display_similarities[index])
+            + _semantic_metadata_bonus(query_keywords, flowers[index])
+            + _maintenance_preference_bonus(maintenance_preference, flowers[index])
             for index in range(len(flowers))
         ],
         dtype=np.float32,
@@ -764,20 +1055,27 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
             svd,
             word_vectorizer,
         )
-        query_axis_display_values = p3._query_axis_display_values(
-            query_lsa[0],
-            query_axis_indices,
-            query_axis_labels,
-            query_keywords,
-        )
-        query_radar_chart = build_latent_radar_chart(
-            query_lsa[0],
-            component_labels,
-            profile_kind="query",
-            axis_indices=query_axis_indices,
-            axis_labels=query_axis_labels,
-            axis_values=query_axis_display_values,
-        )
+        query_axis_positions = _query_backed_axis_positions(query_axis_labels, query_keywords)
+        if len(query_axis_positions) >= 3:
+            query_axis_indices = query_axis_indices[query_axis_positions]
+            query_axis_labels = [query_axis_labels[position] for position in query_axis_positions]
+            query_axis_display_values = p3._query_axis_display_values(
+                query_lsa[0],
+                query_axis_indices,
+                query_axis_labels,
+                query_keywords,
+            )
+            query_radar_chart = build_latent_radar_chart(
+                query_lsa[0],
+                component_labels,
+                profile_kind="query",
+                axis_indices=query_axis_indices,
+                axis_labels=query_axis_labels,
+                axis_values=query_axis_display_values,
+            )
+        else:
+            query_axis_indices = np.asarray([], dtype=int)
+            query_axis_labels = []
 
     suggestions = []
     for index in ranked_indices:

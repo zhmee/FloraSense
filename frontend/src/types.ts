@@ -2,6 +2,8 @@ export interface KeywordUsed {
   keyword: string
   category: string
   score: number
+  explanation?: string
+  explanation_source?: 'llm' | 'local' | ''
 }
 
 export interface MatchedKeyword {
@@ -19,6 +21,10 @@ export interface FlowerSuggestion {
   meanings: string[]
   occasions: string[]
   score: number
+  query_fit_explanation?: string
+  query_fit_occasion_summary?: string
+  explanation_source?: 'llm' | 'local'
+  occasion_summary_source?: 'llm' | 'local' | ''
   matched_keywords: MatchedKeyword[]
   latent_radar_chart: string | null
   latent_radar_axes: string[]

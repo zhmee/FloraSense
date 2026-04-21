@@ -1517,16 +1517,18 @@ def _query_axis_display_values(
     if not queried_positions:
         return display_values
 
-    target_value = float(max(np.max(display_values), 1e-6))
+    # Boost queried axes while preserving their relative differences
+    queried_boost_factor = 2.0
+    non_queried_attenuation = QUERY_AXIS_FALLBACK_ATTENUATION
+    
+    # First, apply boost to queried axes
     for position in queried_positions:
-        display_values[position] = max(float(display_values[position]), target_value)
+        display_values[position] = float(display_values[position]) * queried_boost_factor
+    
+    # Then attenuate non-queried axes
     for position in range(display_values.size):
-        if position in queried_positions:
-            continue
-        display_values[position] = min(
-            float(display_values[position]),
-            target_value * QUERY_AXIS_FALLBACK_ATTENUATION,
-        )
+        if position not in queried_positions:
+            display_values[position] = float(display_values[position]) * non_queried_attenuation
 
     return display_values
 
@@ -1563,16 +1565,18 @@ def _flower_axis_display_values(
     if not matched_positions:
         return display_values
 
-    target_value = float(max(np.max(display_values), 1e-6))
+    # Boost matched axes while preserving their relative differences
+    matched_boost_factor = 2.0
+    non_matched_attenuation = QUERY_AXIS_FALLBACK_ATTENUATION
+    
+    # First, apply boost to matched axes
     for position in matched_positions:
-        display_values[position] = max(float(display_values[position]), target_value)
+        display_values[position] = float(display_values[position]) * matched_boost_factor
+    
+    # Then attenuate non-matched axes
     for position in range(display_values.size):
-        if position in matched_positions:
-            continue
-        display_values[position] = min(
-            float(display_values[position]),
-            target_value * QUERY_AXIS_FALLBACK_ATTENUATION,
-        )
+        if position not in matched_positions:
+            display_values[position] = float(display_values[position]) * non_matched_attenuation
 
     return display_values
 
