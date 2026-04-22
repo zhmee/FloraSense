@@ -298,11 +298,13 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(false)
   const [activeAutocompleteIndex, setActiveAutocompleteIndex] = useState<number>(-1)
   const [expandedDetailSections, setExpandedDetailSections] = useState<Record<string, boolean>>({})
+  const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const [resultLimit, setResultLimit] = useState<number>(5)
   const [appliedLimit, setAppliedLimit] = useState<number>(5)
   const [searchMethod, setSearchMethod] = useState<'svd' | 'tfidf'>('svd')
+  const [ragEnabled, setRagEnabled] = useState<boolean>(true)
   const queryInputRef = useRef<HTMLInputElement | null>(null)
   const appRef = useRef<HTMLElement | null>(null)
   const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
@@ -599,6 +601,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
     setActiveAutocompleteIndex(-1)
     queryInputRef.current?.blur()
     setExpandedDetailSections({})
+    setFlippedCards({})
 
     if (!trimmedQuery) {
       setResults(EMPTY_RESULTS)
@@ -610,7 +613,8 @@ function App({ isActive = true }: AppProps): JSX.Element {
     setError('')
 
     try {
-      const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
+      const endpoint = ragEnabled ? '/api/rag-recommendations' : '/api/recommendations'
+      const response = await fetch(`${endpoint}?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -769,6 +773,23 @@ function App({ isActive = true }: AppProps): JSX.Element {
                     TF-IDF
                   </button>
                 </div>
+                <div className="method-toggle">
+                  <span className="limit-label">Answer Mode:</span>
+                  <button
+                    type="button"
+                    className={`method-chip ${ragEnabled ? 'is-active' : ''}`}
+                    onClick={() => setRagEnabled(true)}
+                  >
+                    RAG
+                  </button>
+                  <button
+                    type="button"
+                    className={`method-chip ${!ragEnabled ? 'is-active' : ''}`}
+                    onClick={() => setRagEnabled(false)}
+                  >
+                    IR only
+                  </button>
+                </div>
               </div>
             </form>
 
@@ -876,7 +897,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 <span className="loading-dot" />
               </div>
               <strong>Ranking flowers</strong>
-              <p>Encoding the query, searching the latent flower space, and sorting the shortlist.</p>
+              <p>{ragEnabled ? 'Transforming the query, searching the flower index, and grounding the answer.' : 'Encoding the query, searching the latent flower space, and sorting the shortlist.'}</p>
             </div>
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
@@ -887,18 +908,17 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
                 const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
-                const narrativeText = queryFitExplanation || fullMeaningText
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
                 const queryFitOccasionSummary = suggestion.query_fit_occasion_summary?.trim() ?? ''
-                const occasionText = queryFitOccasionSummary || fullOccasionText
-                const narrativeIsExpandable = narrativeText !== 'Not listed' && narrativeText.length > 220
-                const hasOccasionText = occasionText !== 'Not listed' && occasionText.length > 0
-                const occasionIsExpandable = hasOccasionText && occasionText.length > 220
-                const isMeaningExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'meaning')])
-                const isOccasionExpanded = Boolean(expandedDetailSections[detailExpandKey(suggestionKey, 'occasion')])
+                const frontMeaningText = queryFitExplanation || fullMeaningText
+                const frontOccasionText = queryFitOccasionSummary || fullOccasionText
+                const hasFrontOccasionText = frontOccasionText !== 'Not listed' && frontOccasionText.length > 0
+                const ragSummary = suggestion.rag_summary?.trim() || queryFitExplanation || 'No RAG summary is available for this result.'
+                const ragSource = suggestion.rag_source || suggestion.explanation_source || 'local'
                 const isDetailsExpanded = Boolean(
                   expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
                 )
+                const isCardFlipped = Boolean(flippedCards[suggestionKey])
                 const highlightTerms = getHighlightTerms(suggestion.matched_keywords.map((match) => match.keyword))
                 const hasExpandableDetails =
                   Boolean(suggestion.latent_radar_chart) || suggestion.matched_keywords.length > 0
@@ -906,12 +926,25 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 return (
                   <article
                     key={suggestionKey}
-                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''}`}
+                    className={`suggestion-card ${index === 0 ? 'is-top-choice' : ''} ${isCardFlipped ? 'is-flipped' : ''}`}
                   >
                     <div className="card-hero">
                       <div className="card-hero-text">
                         <div className="card-topline">
                           <span className="rank-badge">#{index + 1}</span>
+                          <button
+                            type="button"
+                            className="card-flip-toggle"
+                            aria-pressed={isCardFlipped}
+                            onClick={() =>
+                              setFlippedCards((currentState) => ({
+                                ...currentState,
+                                [suggestionKey]: !currentState[suggestionKey],
+                              }))
+                            }
+                          >
+                            {isCardFlipped ? 'Show raw IR' : 'Show RAG'}
+                          </button>
                         </div>
                         <div className="card-header">
                           <h2>{displayName}</h2>
@@ -940,80 +973,69 @@ function App({ isActive = true }: AppProps): JSX.Element {
                       )}
                     </div>
 
-                    <div className="card-metadata">
-                      <div className="card-metadata-attrs" aria-label="Flower attributes">
-                        <div className="detail-card detail-card--compact">
-                          <span className="detail-label">Colors</span>
-                          <p>{formatLabel(suggestion.colors)}</p>
-                        </div>
-                        <div className="detail-card detail-card--compact">
-                          <span className="detail-label">Plant type</span>
-                          <p>{formatLabel(suggestion.plant_types)}</p>
-                        </div>
-                        <div className="detail-card detail-card--compact">
-                          <span className="detail-label">Maintenance</span>
-                          <p>{formatMaintenanceLabel(suggestion.maintenance)}</p>
-                        </div>
-                      </div>
-                      <div className="card-metadata-narrative" aria-label="Meaning and occasions">
-                        <div className="detail-card detail-card--meaning detail-card--explanation">
-                          <span className="detail-label">
-                            {queryFitExplanation ? 'Why this matches' : 'Meaning'}
-                          </span>
-                          <div className="detail-copy-group">
-                            <p
-                              className={`detail-copy ${
-                                narrativeIsExpandable && !isMeaningExpanded ? 'is-collapsed' : ''
-                              }`}
-                            >
-                              {renderHighlightedText(narrativeText, highlightTerms)}
-                            </p>
-                            {narrativeIsExpandable && (
-                              <button
-                                type="button"
-                                className="detail-toggle"
-                                onClick={() =>
-                                  setExpandedDetailSections((currentState) => {
-                                    const key = detailExpandKey(suggestionKey, 'meaning')
-                                    return { ...currentState, [key]: !currentState[key] }
-                                  })
-                                }
-                              >
-                                {isMeaningExpanded ? 'show less' : 'show full explanation'}
-                              </button>
-                            )}
+                    <div className="card-flip-stage" aria-label={isCardFlipped ? 'RAG-fixed result' : 'non-RAG recommendation result'}>
+                      <div className="card-flip-inner">
+                        <section
+                          className="comparison-panel comparison-panel--raw card-face card-face--front"
+                          aria-hidden={isCardFlipped}
+                        >
+                          <div className="comparison-panel__head">
+                            <span className="detail-label">Non-RAG Output</span>
+                            <small>{searchMethod.toUpperCase()}</small>
                           </div>
-                        </div>
-                        {hasOccasionText && (
-                          <div className="detail-card detail-card--occasions">
-                            <span className="detail-label">
-                              {queryFitOccasionSummary ? 'Occasion fit' : 'Occasions'}
-                            </span>
-                            <div className="detail-copy-group">
-                              <p
-                                className={`detail-copy ${
-                                  occasionIsExpandable && !isOccasionExpanded ? 'is-collapsed' : ''
-                                }`}
-                              >
-                                {renderHighlightedText(occasionText, highlightTerms)}
-                              </p>
-                              {occasionIsExpandable && (
-                                <button
-                                  type="button"
-                                  className="detail-toggle"
-                                  onClick={() =>
-                                    setExpandedDetailSections((currentState) => {
-                                      const key = detailExpandKey(suggestionKey, 'occasion')
-                                      return { ...currentState, [key]: !currentState[key] }
-                                    })
-                                  }
-                                >
-                                  {isOccasionExpanded ? 'show less' : 'show full occasion summary'}
-                                </button>
-                              )}
+                          <div className="raw-evidence-grid">
+                            <div>
+                              <span>Colors</span>
+                              <p>{formatLabel(suggestion.colors)}</p>
+                            </div>
+                            <div>
+                              <span>Plant type</span>
+                              <p>{formatLabel(suggestion.plant_types)}</p>
+                            </div>
+                            <div>
+                              <span>Maintenance</span>
+                              <p>{formatMaintenanceLabel(suggestion.maintenance)}</p>
                             </div>
                           </div>
-                        )}
+                          <div className="raw-text-block">
+                            <span>{queryFitExplanation ? 'Why this matches' : 'Meaning'}</span>
+                            <p>{renderHighlightedText(frontMeaningText, highlightTerms)}</p>
+                          </div>
+                          {hasFrontOccasionText && (
+                            <div className="raw-text-block">
+                              <span>{queryFitOccasionSummary ? 'Occasion fit' : 'Occasions'}</span>
+                              <p>{renderHighlightedText(frontOccasionText, highlightTerms)}</p>
+                            </div>
+                          )}
+                        </section>
+
+                        <section
+                          className="comparison-panel comparison-panel--rag card-face card-face--back"
+                          aria-hidden={!isCardFlipped}
+                        >
+                          <div className="comparison-panel__head">
+                            <span className="detail-label">RAG-Fixed Output</span>
+                            <small>{ragSource}</small>
+                          </div>
+                          <p className="rag-card-summary">
+                            {renderHighlightedText(ragSummary, highlightTerms)}
+                          </p>
+                          {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
+                            <div className="rag-card-query">
+                              <span>AI-fixed query sent to IR</span>
+                              <strong>{results.rag.retrieval_query}</strong>
+                            </div>
+                          )}
+                          {suggestion.matched_keywords.length > 0 && (
+                            <div className="rag-card-match-list">
+                              {suggestion.matched_keywords.slice(0, 4).map((match, matchIndex) => (
+                                <span key={`${match.keyword}-${match.category}-${matchIndex}`}>
+                                  {match.keyword}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </section>
                       </div>
                     </div>
 

@@ -785,8 +785,29 @@
 .card-topline {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 2px;
+}
+
+.card-flip-toggle {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid rgba(103, 115, 84, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 249, 240, 0.88);
+  color: var(--olive);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.card-flip-toggle:hover,
+.card-flip-toggle[aria-pressed='true'] {
+  border-color: rgba(103, 115, 84, 0.38);
+  background: rgba(103, 115, 84, 0.12);
+  color: var(--olive);
 }
 
 .card-hero-image {
@@ -848,6 +869,152 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.card-flip-stage {
+  margin-top: 16px;
+  perspective: 1600px;
+}
+
+.card-flip-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.52s ease;
+}
+
+.suggestion-card.is-flipped .card-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.card-face[aria-hidden='true'] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.card-face--back {
+  transform: rotateY(180deg);
+}
+
+.comparison-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(104, 84, 56, 0.11);
+  border-radius: 16px;
+  background: rgba(255, 251, 245, 0.46);
+}
+
+.comparison-panel--rag {
+  border-color: rgba(103, 115, 84, 0.2);
+  background: rgba(247, 249, 240, 0.54);
+}
+
+.comparison-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.comparison-panel__head .detail-label {
+  margin-bottom: 0;
+}
+
+.comparison-panel__head small {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(104, 84, 56, 0.08);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.comparison-panel--rag .comparison-panel__head small {
+  background: rgba(103, 115, 84, 0.12);
+  color: var(--olive);
+}
+
+.raw-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.raw-evidence-grid > div > span,
+.raw-text-block > span,
+.rag-card-query > span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.raw-evidence-grid p,
+.raw-text-block p {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.raw-text-block + .raw-text-block {
+  margin-top: 12px;
+}
+
+.raw-text-block p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.rag-card-summary {
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.7;
+}
+
+.rag-card-query {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(103, 115, 84, 0.16);
+}
+
+.rag-card-query strong {
+  color: var(--accent-deep);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.rag-card-match-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rag-card-match-list span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(103, 115, 84, 0.1);
+  color: var(--olive);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .card-metadata {
@@ -1043,6 +1210,7 @@
 
 .search-options-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 24px;
   margin-top: 14px;
@@ -1132,6 +1300,10 @@
     grid-template-columns: 1fr;
   }
 
+  .raw-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
   .query-rail {
     position: static;
     top: auto;
@@ -1187,6 +1359,8 @@
   }
 
   .search-row button,
+  .card-flip-inner,
+  .card-flip-toggle,
   .sample-chip,
   .suggestion-card {
     transition: none;

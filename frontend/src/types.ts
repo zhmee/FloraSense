@@ -23,12 +23,40 @@ export interface FlowerSuggestion {
   score: number
   query_fit_explanation?: string
   query_fit_occasion_summary?: string
+  rag_summary?: string
+  rag_source?: 'llm' | 'local' | ''
   explanation_source?: 'llm' | 'local'
   occasion_summary_source?: 'llm' | 'local' | ''
   matched_keywords: MatchedKeyword[]
   latent_radar_chart: string | null
   latent_radar_axes: string[]
   image_url?: string
+}
+
+export interface RagContextDocument {
+  rank: number
+  name: string
+  scientific_name: string
+  score?: number
+  colors: string[]
+  maintenance: string[]
+  plant_types: string[]
+  meanings: string[]
+  occasions: string[]
+  matched_keywords: Array<{
+    keyword: string
+    category: string
+  }>
+}
+
+export interface RagResponse {
+  user_query: string
+  retrieval_query: string
+  query_transform_source: 'llm' | 'local'
+  query_transform_rationale: string
+  answer: string
+  answer_source: 'llm' | 'local'
+  context_documents: RagContextDocument[]
 }
 
 export interface RecommendationResponse {
@@ -38,6 +66,7 @@ export interface RecommendationResponse {
   query_latent_radar_chart: string | null
   query_latent_radar_axes: string[]
   suggestions: FlowerSuggestion[]
+  rag?: RagResponse
 }
 
 export interface AutocompleteResponse {

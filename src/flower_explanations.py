@@ -467,6 +467,27 @@ def _keyword_terms(suggestion: dict, categories: set[str] | None = None) -> list
     return _dedupe(terms)[:5]
 
 
+def _query_term_supported(term: str, values: Any) -> bool:
+    normalized_term = _normalize_key(term)
+    if not normalized_term or not isinstance(values, list):
+        return False
+    return any(
+        normalized_term == _normalize_key(value)
+        or normalized_term in _normalize_key(value)
+        or _normalize_key(value) in normalized_term
+        for value in values
+        if _normalize_key(value)
+    )
+
+
+def _query_focus_terms(query: str) -> list[str]:
+    return [
+        token
+        for token in _query_signal_tokens(query)
+        if token not in {"care", "easy", "hard", "need", "needs", "want"}
+    ][:4]
+
+
 def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = None) -> str:
     name = _clean_text(suggestion.get("name")) or "This flower"
     categories = _query_categories(query_keywords)
@@ -496,31 +517,49 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
     if not plant_types:
         plant_types = _values_mentioned_by_query(query, suggestion.get("plant_types"), 2)
 
+    focus_terms = _query_focus_terms(query)
+    supported_focus = [
+        term
+        for term in focus_terms
+        if (
+            _query_term_supported(term, suggestion.get("colors"))
+            or _query_term_supported(term, suggestion.get("meanings"))
+            or _query_term_supported(term, suggestion.get("occasions"))
+            or _query_term_supported(term, suggestion.get("plant_types"))
+            or _query_term_supported(term, suggestion.get("maintenance"))
+        )
+    ]
+    unsupported_focus = [term for term in focus_terms if term not in supported_focus and term not in {"flower", "flowers"}]
+
     reasons = []
     if colors:
-        reasons.append(f"it comes in {_join_human(colors)}")
+        reasons.append(f"matches the requested {_join_human(colors)} color")
     if maintenance_terms:
-        reasons.append(f"it matches the requested {_join_human(maintenance_terms)} profile")
+        reasons.append(f"fits the requested {_join_human(maintenance_terms)} care level")
     elif maintenance and ("maintenance" in categories or _values_mentioned_by_query(query, maintenance, 1)):
-        reasons.append(f"it has {maintenance[0]} care needs")
+        reasons.append(f"has {maintenance[0]} care needs")
     if plant_types:
-        reasons.append(f"it is a {_join_human(plant_types)}")
+        reasons.append(f"is a {_join_human(plant_types)}")
     if meaning_terms:
-        reasons.append(f"it reflects {_join_human(meaning_terms)}")
-    if meanings and meaning_intent:
-        reasons.append(f"its meaning includes {_join_human(meanings[:3])}")
+        reasons.append(f"directly supports {_join_human(meaning_terms)}")
     if occasion_terms:
-        reasons.append(f"it suits {_join_human(occasion_terms[:2])}")
-    if maintenance and not maintenance_terms and not any("care needs" in reason for reason in reasons):
-        reasons.append(f"it has {maintenance[0]} care needs")
+        reasons.append(f"suits {_join_human(occasion_terms[:2])}")
 
     query_clause = f' for "{_clean_text(query)}"' if _clean_text(query) else ""
     if not reasons:
         return _sentence_case(
-            _shorten_words(f"{name} works{query_clause} because its symbolism and flower profile fit the request.")
+            _shorten_words(f"{name} is a weaker fit{query_clause}; the visible flower details only partially support the request.")
         )
 
-    return _sentence_case(_shorten_words(f"{name} works{query_clause} because {_join_human(reasons)}."))
+    if unsupported_focus and reasons:
+        return _sentence_case(
+            _shorten_words(
+                f"{name} is a partial fit{query_clause}: it {_join_human(reasons)}, but the visible evidence does not clearly support {_join_human(unsupported_focus[:2])}.",
+                44,
+            )
+        )
+
+    return _sentence_case(_shorten_words(f"{name} works{query_clause} because it {_join_human(reasons)}.", 38))
 
 
 def _fallback_occasion_summary(query: str, suggestion: dict) -> str:
@@ -567,7 +606,7 @@ def _llm_client():
     if not _llm_explanations_enabled():
         return None
 
-    api_key = os.getenv("API_KEY")
+    api_key = os.getenv("SPARK_API_KEY") or os.getenv("API_KEY")
     if not api_key:
         return None
 
