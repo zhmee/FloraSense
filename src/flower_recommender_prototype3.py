@@ -35,6 +35,10 @@ TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "fl
 SYNONYM_FILE = Path(__file__).resolve().parent / "data" / "synonyms.csv"
 
 ENABLE_QUERY_LATENT_DEBUG = False
+#Glove stuf
+GLOVE_PATH = Path(__file__).resolve().parent / "data" / "dolma_300_2024_1.2M.100_combined.txt"
+GLOVE_DIM  = 300
+GLOVE_WEIGHT = 0.30   # tune this: 0 = SVD only, 1 = GloVe only
 
 # configuration values for the model and for the returned UI payload.
 MAX_SVD_COMPONENTS = 96
@@ -87,6 +91,154 @@ FLOWER_QUERY_TOKENS = {"flower", "flowers"}
 
 # token pattern because we need words for matching/displaying
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+
+
+
+# ============================================================================
+# GloVe helpers
+# ============================================================================
+@lru_cache(maxsize=1)
+def _load_glove() -> dict[str, np.ndarray]:
+    vocab_path = GLOVE_PATH.with_suffix(".vocab.npy")
+    vecs_path  = GLOVE_PATH.with_suffix(".vecs.npy")
+
+    # fast path — binary files exist from a previous conversion
+    if vocab_path.exists() and vecs_path.exists():
+        print("[GloVe] loading from binary cache...")
+        words   = np.load(str(vocab_path), allow_pickle=True)
+        vectors = np.load(str(vecs_path))
+        print(f"[GloVe] loaded {len(words):,} vectors")
+        return dict(zip(words.tolist(), vectors))
+
+    # slow path — first time, parse the text file
+    if not GLOVE_PATH.exists():
+        print(
+            f"[GloVe] file not found at {GLOVE_PATH}. "
+            "Running in SVD-only mode. "
+            "Download glove.2024.dolma.300d.zip from https://nlp.stanford.edu/projects/glove/ to enable GloVe fusion."
+        )
+        return {}
+
+    print(f"[GloVe] first load — parsing {GLOVE_PATH.name} (will be faster next time)...")
+    words, vectors = [], []
+    with GLOVE_PATH.open(encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip().split(" ")
+            if len(parts) != GLOVE_DIM + 1:
+                continue
+            try:
+                words.append(parts[0])
+                vectors.append(np.array(parts[1:], dtype=np.float32))
+            except ValueError:
+                continue
+
+    # save binary cache for next time automatically
+    np.save(str(vocab_path), np.array(words,   dtype=object))
+    np.save(str(vecs_path),  np.stack(vectors).astype(np.float32))
+    print(f"[GloVe] cached to binary — next load will be fast")
+    return dict(zip(words, [vectors[i] for i in range(len(vectors))]))
+ 
+ 
+ #glove is so slow: 
+def convert_glove_to_npy() -> None:
+    """
+    One-time conversion: glove .txt → two .npy files for fast loading.
+    Run this once from the command line:  python -c "from flower_recommender_prototype3 import convert_glove_to_npy; convert_glove_to_npy()"
+    After that, _load_glove() will use the fast binary files automatically.
+    """
+    print(f"[GloVe] converting {GLOVE_PATH.name} to binary — this runs once...")
+    words = []
+    vectors = []
+    with GLOVE_PATH.open(encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip().split(" ")
+            if len(parts) != GLOVE_DIM + 1:
+                continue
+            try:
+                words.append(parts[0])
+                vectors.append(np.array(parts[1:], dtype=np.float32))
+            except ValueError:
+                continue
+
+    vocab_path = GLOVE_PATH.with_suffix(".vocab.npy")
+    vecs_path  = GLOVE_PATH.with_suffix(".vecs.npy")
+    np.save(str(vocab_path), np.array(words, dtype=object))
+    np.save(str(vecs_path),  np.stack(vectors).astype(np.float32))
+    print(f"[GloVe] saved {len(words):,} vectors to {vecs_path.name}")
+
+def _embed_text(text: str, glove: dict[str, np.ndarray]) -> np.ndarray | None:
+    """
+    Embed a piece of text by mean-pooling the GloVe vectors of its tokens.
+ 
+    Returns None when no tokens in the text have GloVe coverage so the caller
+    can decide how to handle the gap (typically fall back to SVD score).
+    """
+    if not glove or not text:
+        return None
+ 
+    tokens = TOKEN_PATTERN.findall(text.lower())
+    vectors = [glove[token] for token in tokens if token in glove]
+    if not vectors:
+        return None
+ 
+    # mean-pool then L2-normalise so cosine similarity = dot product later
+    mean_vec = np.mean(vectors, axis=0).astype(np.float32)
+    norm = float(np.linalg.norm(mean_vec))
+    if norm < 1e-9:
+        return None
+    return mean_vec / norm
+ 
+ 
+def _build_glove_matrix(
+    flowers: list[dict],
+    glove: dict[str, np.ndarray],
+) -> np.ndarray | None:
+    """
+    Pre-compute one normalised GloVe embedding per flower document.
+ 
+    Returns a float32 array of shape (n_flowers, GLOVE_DIM), or None when
+    GloVe is unavailable so downstream code can skip the fusion step cleanly.
+    """
+    if not glove:
+        return None
+ 
+    rows = []
+    for flower in flowers:
+        vec = _embed_text(flower["document"], glove)
+        if vec is None:
+            # zero vector for flowers with no GloVe coverage — will score 0
+            # against any query vector which is harmless
+            vec = np.zeros(GLOVE_DIM, dtype=np.float32)
+        rows.append(vec)
+ 
+    return np.stack(rows, axis=0).astype(np.float32)
+ 
+ 
+def _glove_similarities(
+    query: str,
+    glove: dict[str, np.ndarray],
+    glove_matrix: np.ndarray | None,
+) -> np.ndarray | None:
+    """
+    Compute cosine similarities between the query embedding and every flower
+    embedding.  Returns None when GloVe is unavailable so the caller can skip
+    the blending step and use the SVD scores as-is.
+    """
+    if glove_matrix is None or not glove:
+        return None
+ 
+    query_vec = _embed_text(query, glove)
+    if query_vec is None:
+        return None
+ 
+    # glove_matrix rows are already L2-normalised, query_vec is normalised too
+    # so the dot product equals cosine similarity
+    return glove_matrix.dot(query_vec).astype(np.float32)
+
+ 
+# ============================================================================
+# END GloVe helpers
+# ============================================================================
 
 # START OF TEXT CLEANUP HELPERS
 
@@ -1991,6 +2143,7 @@ def _load_model() -> tuple:
     # build the vectorizers and SVD model once, then reuse them for all queries (bc SVD expensive af)
     flowers = _build_corpus_docs()
     documents = [flower["document"] for flower in flowers]
+  
 
     word_vectorizer = TfidfVectorizer(
         # word n-grams capture explicit words and short phrases
@@ -2017,6 +2170,9 @@ def _load_model() -> tuple:
     combined_matrix = hstack([word_matrix, char_matrix], format="csr")
     svd, lsa_matrix = _fit_lsa(combined_matrix, MAX_SVD_COMPONENTS)
     component_labels = _component_labels_from_svd(svd, word_vectorizer, flowers)
+    #the glove stuff
+    glove        = _load_glove()
+    glove_matrix = _build_glove_matrix(flowers, glove)
 
     return (
         flowers,
@@ -2029,6 +2185,8 @@ def _load_model() -> tuple:
         svd,
         lsa_matrix,
         component_labels,
+        glove, 
+        glove_matrix,
     )
 
 
@@ -2264,7 +2422,19 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     if not query or not query.strip():
         return _empty_response(query)
 
-    flowers, word_vectorizer, char_vectorizer, word_matrix, _, svd, lsa_matrix, component_labels = _load_model()
+    (
+    flowers,
+    word_vectorizer,
+    char_vectorizer,
+    word_matrix,
+    _,
+    svd,
+    lsa_matrix,
+    component_labels,
+    glove,
+    glove_matrix,
+    ) = _load_model()
+    
     query_word_matrix = word_vectorizer.transform([query])
     query_combined_matrix = _combined_features([query], word_vectorizer, char_vectorizer)
 
@@ -2275,7 +2445,20 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     # project the query into the same latent space as the flower documents,
     # then compare with cosine similarity
     query_lsa = normalize(svd.transform(query_combined_matrix), norm="l2")
-    similarities = cosine_similarity(query_lsa, lsa_matrix)[0]
+    svd_similarities = cosine_similarity(query_lsa, lsa_matrix)[0]
+    glove_sims = _glove_similarities(query, glove, glove_matrix)
+ 
+    if glove_sims is not None:
+        # late fusion: weighted linear combination of the two independent scores
+        similarities = (
+            (1.0 - GLOVE_WEIGHT) * svd_similarities
+            + GLOVE_WEIGHT * glove_sims
+        )
+    else:
+        # GloVe unavailable — use SVD scores as-is (no behaviour change)
+        similarities = svd_similarities
+
+
     ranked_indices = np.argsort(similarities)[::-1]
 
     # keep only the positive similarities. non-positive values can go bye bye
