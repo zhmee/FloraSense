@@ -29,3 +29,9 @@ package-lock.json
 .env
 
 data_scraping/.ipynb_checkpoints
+
+src/data/the_files/dolma_300_2024_1.2M.100_combined.vecs.npy
+src/data/the_files/dolma_300_2024_1.2M.100_combined.vocab.npy
+src/data/dolma_300_2024_1.2M.100_combined.vocab.npy
+src/data/dolma_300_2024_1.2M.100_combined.vecs.npy
+src/data/glove.6B.100d.txt
