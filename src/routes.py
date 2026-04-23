@@ -715,12 +715,10 @@ def _generate_rag_response(
                 "a graceful sentence about when the flower is suitable. If a record says it has "
                 "occasion evidence, rag_occasion_summary must not be empty; return an empty "
                 "string only when the record has no occasion evidence. "
-                "For every card ir_summary, summarize the retrieval evidence in a plain, useful "
-                "style for the raw IR card. It should be different from rag_summary: shorter, "
-                "more factual, and focused on concrete evidence such as colors, plant type, "
-                "maintenance, meanings, occasions, and matched terms. Explain why the evidence "
-                "connects to the user's query instead of only listing attributes. "
-                "Never mention RAG, IR, "
+                "For every card ir_summary, summarize the retreived data with grammar improvements, "
+                "so that it is more grammatically correct and easier to read. Keep most of the words from "
+                "the original data source intact. ONLY polish it grammatically"
+                "Never mention RAG, IR,"
                 "vectors, retrieval, database, matched keywords, score, or context. "
                 "Return JSON only with this exact shape: "
                 "{\"answer\":\"2 to 3 sentence overall answer\", "
@@ -734,10 +732,12 @@ def _generate_rag_response(
                 "in the same order, using the exact rank, name, and scientific name shown. "
                 "Do not skip duplicated or similar-looking records; each retrieved record needs "
                 "its own ir_summary, rag_summary, and rag_occasion_summary. "
-                "Each ir_summary must be 1 to 2 useful sentences, 35 to 60 words total, and must "
-                "not copy the rag_summary. "
+                "Each ir_summary must be around 5 useful sentences and must "
+                "not copy the rag_summary. It must use directly the data for that particular flower, "
+                "and just rewrite in a more user friendly readable way."
                 "Each rag_summary must be 2 to 3 useful sentences, 45 to 80 words total, and "
-                "should explain the fit using evidence that matters for the original user query. Each "
+                "should explain the fit using evidence that matters for the original user query."
+                "Include WHY it was chosen. Each "
                 "rag_occasion_summary must be one useful sentence, 14 to 30 words, focused only "
                 "on occasion evidence."
             ),
@@ -853,6 +853,7 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
                 "occasions": suggestion.get("occasions", []),
             }
         )
+
         suggestion["ir_summary"] = ir_summary or data_summary
         suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
         suggestion["rag_summary"] = summary or data_summary
@@ -867,6 +868,8 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
             if occasion_summary
             else suggestion.get("occasion_summary_source", "")
         )
+        suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
+        suggestion["ir_query_fit_occasion_summary"] = suggestion.get("query_fit_occasion_summary", "")
 
     payload["rag"] = {
         "user_query": query,
