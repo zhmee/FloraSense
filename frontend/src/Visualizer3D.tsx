@@ -1313,6 +1313,7 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
   // ── BOUQUE PORTION START  ────────────────────────────────────────────────────
 const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
 const [bouquetTrayOpen] = useState(false)
+const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
 const [myBouquetInsightsStatus, setMyBouquetInsightsStatus] = useState<InsightsStatus>('idle')
 
   // ── BOUQUE PORTION END  ────────────────────────────────────────────────────
