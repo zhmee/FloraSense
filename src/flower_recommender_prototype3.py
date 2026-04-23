@@ -2384,10 +2384,10 @@ def get_flower_vectors(scientific_names: list[str]) -> dict:
 
     flowers, _, _, _, _, _, lsa_matrix, component_labels, _, _ = _load_model()
     
-    sci_to_index = {
-        _normalize(f["scientific_name"]): i
-        for i, f in enumerate(flowers)
-    }
+    sci_to_index = {}
+    for i, f in enumerate(flowers):
+        sci_to_index[_normalize(f["scientific_name"])] = i
+        sci_to_index[_normalize(f["name"])] = i
     
     result = []
     for name in scientific_names:

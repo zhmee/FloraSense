@@ -12,30 +12,26 @@ from flower_recommender_prototype3 import recommend_flowers, get_flower_vectors
 # each recommendation has a score (0-100) that the frontend can use to set connection strength
 # selected_scientific_names: list of scientific names the user has selected, passed in by the frontend
 def get_bouquet_recommendations(selected_scientific_names: list[str]) -> dict:
-
-    # if the frontend sent an empty list, return early with nothing
     if not selected_scientific_names:
         return {"recommendations": []}
 
-    # fetch flower metadata for the selected flowers using the public interface
     data = get_flower_vectors(selected_scientific_names)
-    
-    selected_flowers = data["flowers"]  # list of flower dicts with name, meanings, colors, etc.
+    selected_flowers = data["flowers"]
 
-    # if none of the scientific names matched anything in the corpus, return early
     if not selected_flowers:
         return {"recommendations": []}
 
-    # collect meaning phrases from all selected flowers to build a pseudo-query
+    selected_names = {f["name"].lower() for f in selected_flowers}
+
+    # --- primary path: meaning-based query ---
     meaning_chunks = []
     for f in selected_flowers:
-        for meaning in f["meanings"]:  # each flower can have multiple meaning strings
-            for chunk in meaning.split(";"):  # split on semicolons to get individual phrases
-                chunk = chunk.strip(" .:")  # clean up punctuation/whitespace
-                if chunk and len(chunk.split()) <= 5:  # skip empty or overly long phrases
+        for meaning in f["meanings"]:
+            for chunk in meaning.split(";"):
+                chunk = chunk.strip(" .:")
+                if chunk and len(chunk.split()) <= 8:
                     meaning_chunks.append(chunk)
 
-    # deduplicate the chunks while preserving order
     seen, deduped = set(), []
     for chunk in meaning_chunks:
         key = chunk.lower()
@@ -43,21 +39,39 @@ def get_bouquet_recommendations(selected_scientific_names: list[str]) -> dict:
             seen.add(key)
             deduped.append(chunk)
 
-    # join the top 15 meaning phrases into a single string to use as a query
-    # this lets us reuse recommend_flowers which expects a text query
-    # if we improve recommend_flowers later, these recommendations improve automatically
-    pseudo_query = " ".join(deduped[:15])
+    fetch_limit = max(15, len(selected_flowers) * 3)
 
-    # run the existing recommendation pipeline with the pseudo-query
-    # fetch more than we need (10) so we have room to filter out already-selected flowers
-    result = recommend_flowers(pseudo_query, limit=10)
+    if deduped:
+        pseudo_query = " ".join(deduped[:20])
+        result = recommend_flowers(pseudo_query, limit=fetch_limit)
+        recommendations = [
+            s for s in result["suggestions"]
+            if s["name"].lower() not in selected_names
+        ][:5]
 
-    # filter out flowers the user already has in their bouquet
-    # each remaining suggestion has a score (0-100) the frontend can use for connection strength
-    selected_names = {f["name"].lower() for f in selected_flowers}
+        if recommendations:
+            return {"recommendations": recommendations}
+
+    # --- fallback: color-based query ---
+    # collect all colors across the bouquet, deduplicated
+    all_colors = []
+    seen_colors = set()
+    for f in selected_flowers:
+        for color in f.get("colors", []):
+            c = color.lower().strip()
+            if c and c not in seen_colors:
+                seen_colors.add(c)
+                all_colors.append(color)
+
+    if not all_colors:
+        return {"recommendations": []}
+
+    color_query = " ".join(all_colors[:10])
+    result = recommend_flowers(color_query, limit=fetch_limit)
     recommendations = [
         s for s in result["suggestions"]
         if s["name"].lower() not in selected_names
-    ][:5]  # cap at 5 recommendations
-
-    return {"recommendations": recommendations}
+    ][:5]
+    data = get_flower_vectors(["Bird Of Paradise", "Baby's Breath", "Lily"])
+    print(data)
+    return {"recommendations": recommendations, "fallback": "color"}
