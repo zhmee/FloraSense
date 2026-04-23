@@ -105,7 +105,6 @@ function getFlowerColorHex(f: VisualizerFlower) {
 }
 function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)) }
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t }
-function toPercent(v: number) { return `${Math.round(clamp(v, 0, 1) * 100)}%` }
 function toScoreLabel(v: number) { return `${Math.round(v)}% match` }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -1304,7 +1303,7 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [bouquetInsights, setBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
   const [bouquetInsightsStatus, setBouquetInsightsStatus] = useState<InsightsStatus>('idle')
-  const [bouquetInsightsError, setBouquetInsightsError] = useState<string | null>(null)
+  const [, setBouquetInsightsError] = useState<string | null>(null)
   const shellRef = useRef<HTMLElement | null>(null)
   const healthListRef = useRef<HTMLDivElement | null>(null)
   const recommendationListRef = useRef<HTMLDivElement | null>(null)
@@ -1313,8 +1312,7 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
 
   // ── BOUQUE PORTION START  ────────────────────────────────────────────────────
 const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
-const [bouquetTrayOpen, setBouquetTrayOpen] = useState(false)
-const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
+const [bouquetTrayOpen] = useState(false)
 const [myBouquetInsightsStatus, setMyBouquetInsightsStatus] = useState<InsightsStatus>('idle')
 
   // ── BOUQUE PORTION END  ────────────────────────────────────────────────────
@@ -1657,21 +1655,17 @@ useEffect(() => {
       })}
     </div>
 
-    {myBouquetIds.length < 2 && (
-  <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
-)}
-
-{myBouquetInsightsStatus === 'loading' && myBouquetIds.length >= 2 && (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--viz-muted)', fontSize: 12 }}>
-    <span style={{
-      width: 14, height: 14, border: '2px solid currentColor',
-      borderTopColor: 'transparent', borderRadius: '50%',
-      display: 'inline-block',
-      animation: 'spin 0.7s linear infinite',
-    }} />
-    Calculating meaning balance…
-  </div>
-)}
+    {myBouquetInsightsStatus === 'loading' && myBouquetIds.length >= 2 && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--viz-muted)', fontSize: 12 }}>
+        <span style={{
+          width: 14, height: 14, border: '2px solid currentColor',
+          borderTopColor: 'transparent', borderRadius: '50%',
+          display: 'inline-block',
+          animation: 'spin 0.7s linear infinite',
+        }} />
+        Calculating meaning balance…
+      </div>
+    )}
 
     {myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
       <div style={{ marginBottom: 12 }}>
