@@ -1658,8 +1658,20 @@ useEffect(() => {
     </div>
 
     {myBouquetIds.length < 2 && (
-      <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
-    )}
+  <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
+)}
+
+{myBouquetInsightsStatus === 'loading' && myBouquetIds.length >= 2 && (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--viz-muted)', fontSize: 12 }}>
+    <span style={{
+      width: 14, height: 14, border: '2px solid currentColor',
+      borderTopColor: 'transparent', borderRadius: '50%',
+      display: 'inline-block',
+      animation: 'spin 0.7s linear infinite',
+    }} />
+    Calculating meaning balance…
+  </div>
+)}
 
     {myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
       <div style={{ marginBottom: 12 }}>
