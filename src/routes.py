@@ -575,18 +575,32 @@ def _local_card_summary(user_query: str, document: dict) -> str:
     return f"{name} has limited support for \"{user_query}\" because the retrieved record has sparse descriptive evidence."
 
 
+def _local_data_summary(document: dict) -> str:
+    meanings = _compact_context_values(document.get("meanings"), 2)
+    occasions = _compact_context_values(document.get("occasions"), 2)
+    parts = []
+    if meanings:
+        parts.append(f"Meanings: {'; '.join(meanings)}")
+    if occasions:
+        parts.append(f"Occasions: {'; '.join(occasions)}")
+    if parts:
+        return " ".join(parts)
+
+    name = document.get("name") or "This flower"
+    return f"{name} does not have meaning or occasion text listed in the flower data."
+
+
 def _fallback_card_summaries(user_query: str, context_documents: list[dict]) -> dict[str, dict[str, str]]:
     summaries = {}
     for document in context_documents:
         name = document.get("name")
         if not name:
             continue
+        data_summary = _local_data_summary(document)
         summaries[_rag_name_key(name)] = {
-            "rag_summary": _local_card_summary(user_query, document),
-            "ir_summary": _local_card_summary(user_query, document),
-            "rag_occasion_summary": " ".join(
-                str(document.get("non_rag_occasion_summary") or "").split()
-            ),
+            "rag_summary": data_summary,
+            "ir_summary": data_summary,
+            "rag_occasion_summary": "",
         }
     return summaries
 
@@ -832,22 +846,16 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
         summary = card_text.get("rag_summary", "")
         ir_summary = card_text.get("ir_summary", "")
         occasion_summary = card_text.get("rag_occasion_summary", "")
-        suggestion["ir_summary"] = ir_summary or suggestion.get("query_fit_explanation", "")
-        suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
-        suggestion["rag_summary"] = summary or _local_card_summary(
-            query,
+        data_summary = _local_data_summary(
             {
                 "name": name,
-                "non_rag_explanation": suggestion.get("query_fit_explanation", ""),
-                "non_rag_occasion_summary": suggestion.get("query_fit_occasion_summary", ""),
-                "matched_keywords": suggestion.get("matched_keywords", []),
                 "meanings": suggestion.get("meanings", []),
                 "occasions": suggestion.get("occasions", []),
-                "colors": suggestion.get("colors", []),
-                "maintenance": suggestion.get("maintenance", []),
-                "plant_types": suggestion.get("plant_types", []),
-            },
+            }
         )
+        suggestion["ir_summary"] = ir_summary or data_summary
+        suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
+        suggestion["rag_summary"] = summary or data_summary
         suggestion["rag_occasion_summary"] = (
             occasion_summary
             if card_summary_source == "llm"
