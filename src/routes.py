@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 from functools import lru_cache
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -16,7 +17,7 @@ from utils import FLOWER_IMAGE_DIR
 from models import db, Episode, Review
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
-USE_LLM = False
+USE_LLM = True
 # USE_LLM = True
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -105,34 +106,43 @@ def _normalize_recommendation_payload(payload, query: str) -> dict:
     return normalized
 
 
-def _add_recommendation_explanations(payload: dict) -> dict:
+def _add_recommendation_explanations(payload: dict, use_llm: bool = False) -> dict:
     try:
         from flower_explanations import add_query_fit_explanations
 
-        return add_query_fit_explanations(payload)
+        return add_query_fit_explanations(payload, use_llm=use_llm)
     except Exception:
         logger.exception("Could not build query-aware recommendation explanations.")
         return payload
 
 
-def _recommend_with_fallback(query: str, limit: int, method: str) -> dict:
+def _recommend_with_fallback(query: str, limit: int, method: str, use_llm_explanations: bool = False) -> dict:
     modules = _load_search_modules()
 
     if method == "tfidf":
         payload = modules["recommend_flowers_tfidf"](query, limit=limit)
-        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+        return _add_recommendation_explanations(
+            _normalize_recommendation_payload(payload, query),
+            use_llm=use_llm_explanations,
+        )
 
     try:
         payload = modules["recommend_flowers"](query, limit=limit)
-        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+        return _add_recommendation_explanations(
+            _normalize_recommendation_payload(payload, query),
+            use_llm=use_llm_explanations,
+        )
     except Exception:
         logger.exception("SVD recommendations failed for query %r. Falling back to TF-IDF.", query)
         payload = modules["recommend_flowers_tfidf"](query, limit=limit)
-        return _add_recommendation_explanations(_normalize_recommendation_payload(payload, query))
+        return _add_recommendation_explanations(
+            _normalize_recommendation_payload(payload, query),
+            use_llm=use_llm_explanations,
+        )
 
 
 def _llm_client():
-    api_key = os.getenv("SPARK_API_KEY") or os.getenv("API_KEY")
+    api_key = os.getenv("SPARK_API_KEY")
     if not api_key:
         try:
             from dotenv import load_dotenv
@@ -140,7 +150,7 @@ def _llm_client():
             load_dotenv()
         except Exception:
             logger.debug("python-dotenv is unavailable while loading Spark API key.", exc_info=True)
-        api_key = os.getenv("SPARK_API_KEY") or os.getenv("API_KEY")
+        api_key = os.getenv("SPARK_API_KEY")
 
     if not api_key:
         return None, "SPARK_API_KEY is not set."
@@ -256,8 +266,57 @@ QUERY_STOPWORDS = {
     "wouldnt",
     "who",
 }
+MEANING_INTENT_TOKENS = {
+    "courage",
+    "friendship",
+    "gratitude",
+    "hope",
+    "love",
+    "meaning",
+    "means",
+    "remembrance",
+    "represent",
+    "represents",
+    "romantic",
+    "romance",
+    "strength",
+    "symbol",
+    "symbolic",
+    "symbolism",
+    "symbolize",
+    "symbolizes",
+    "thanks",
+    "thank",
+}
+NEGATIVE_LOVE_MEANING_PATTERNS = (
+    "decrease of love",
+    "fading love",
+    "lost love",
+    "love denied",
+    "rejected love",
+    "unrequited love",
+    "infidelity",
+    "betrayal",
+)
 
-def _llm_retrieval_query(client, user_query: str) -> tuple[str, str]:
+
+def _query_has_symbolic_intent(query: str) -> bool:
+    query_tokens = set(re.findall(r"[a-z0-9]+", _rag_name_key(query)))
+    return bool(query_tokens & MEANING_INTENT_TOKENS)
+
+
+def _meaning_value_supports_query_term(term: str, value: str) -> bool:
+    normalized_term = _rag_name_key(term)
+    normalized_value = _rag_name_key(value)
+    if not normalized_term or not normalized_value:
+        return False
+    if any(pattern in normalized_term for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
+        return False
+    if normalized_term == "love" and any(pattern in normalized_value for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
+        return False
+    return normalized_term == normalized_value or normalized_term in normalized_value or normalized_value in normalized_term
+
+def _llm_retrieval_query(client, user_query: str) -> tuple[str, str, str]:
     messages = [
         {
             "role": "system",
@@ -294,7 +353,7 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, str]:
         content = _llm_text_response(client, messages)
     except Exception:
         logger.exception("LLM query transformation failed.")
-        return user_query, "LLM query transformation failed; using the original query."
+        return user_query, "LLM query transformation failed; using the original query.", "local"
 
     parsed = _extract_json_object(content)
     retrieval_query = str(parsed.get("retrieval_query") or "").strip()
@@ -302,8 +361,9 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, str]:
     if not retrieval_query:
         retrieval_query = user_query
         rationale = "The LLM did not return a valid retrieval query, so the original query was used."
+        return retrieval_query, rationale, "local"
 
-    return retrieval_query, rationale
+    return retrieval_query, rationale, "llm"
 
 
 def _compact_context_values(values, limit: int = 3) -> list[str]:
@@ -460,13 +520,18 @@ def _local_card_summary(user_query: str, document: dict) -> str:
     color_terms = matched_by_category.get("color") or [
         value for value in document.get("colors", []) if _rag_name_key(value) in requested_tokens
     ]
-    meaning_terms = matched_by_category.get("meaning", [])
+    raw_meaning_terms = matched_by_category.get("meaning", []) if _query_has_symbolic_intent(user_query) else []
+    meaning_terms = [
+        term
+        for term in raw_meaning_terms
+        if any(_meaning_value_supports_query_term(term, value) for value in document.get("meanings", []) or [])
+    ]
     occasion_terms = matched_by_category.get("occasion", [])
     maintenance_terms = matched_by_category.get("maintenance", [])
     plant_terms = matched_by_category.get("plant_type", [])
 
     if color_terms:
-        reasons.append(f"matches the requested {', '.join(color_terms[:2])} color")
+        reasons.append(f"is available in {', '.join(color_terms[:2])}")
     if meaning_terms:
         reasons.append(f"supports the symbolism of {', '.join(meaning_terms[:2])}")
     if occasion_terms:
@@ -501,20 +566,81 @@ def _fallback_card_summaries(user_query: str, context_documents: list[dict]) -> 
     }
 
 
-def _fallback_rag_answer(context_documents: list[dict], unavailable_reason: str) -> str:
-    if not context_documents:
-        return f"LLM answer unavailable: {unavailable_reason} No retrieved flowers were found."
+def _join_overview_values(values: list[str]) -> str:
+    values = [value for value in values if value]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
-    names = [doc["name"] for doc in context_documents[:3] if doc.get("name")]
-    if not names:
-        return f"LLM answer unavailable: {unavailable_reason} The retrieved context is shown below."
-    if len(names) == 1:
-        shortlist = names[0]
-    elif len(names) == 2:
-        shortlist = f"{names[0]} and {names[1]}"
-    else:
-        shortlist = f"{', '.join(names[:-1])}, and {names[-1]}"
-    return f"LLM answer unavailable: {unavailable_reason} The IR system retrieved {shortlist} as the strongest context."
+
+def _overview_reason_phrase(document: dict, user_query: str) -> str:
+    matched_by_category: dict[str, list[str]] = {}
+    for match in document.get("matched_keywords", []) or []:
+        if not isinstance(match, dict):
+            continue
+        keyword = " ".join(str(match.get("keyword") or "").split())
+        category = " ".join(str(match.get("category") or "").split())
+        if keyword and category:
+            matched_by_category.setdefault(category, [])
+            if keyword not in matched_by_category[category]:
+                matched_by_category[category].append(keyword)
+
+    reasons = []
+    meaning_terms = [
+        term
+        for term in (matched_by_category.get("meaning") or [])
+        if any(_meaning_value_supports_query_term(term, value) for value in document.get("meanings", []) or [])
+    ]
+    if _query_has_symbolic_intent(user_query) and meaning_terms:
+        reasons.append(f"its symbolism centers on {_join_overview_values(meaning_terms[:2])}")
+    if matched_by_category.get("occasion"):
+        reasons.append(f"it naturally suits {_join_overview_values(matched_by_category['occasion'][:2])}")
+    if matched_by_category.get("color"):
+        reasons.append(f"it is available in {_join_overview_values(matched_by_category['color'][:2])}")
+    if matched_by_category.get("maintenance"):
+        reasons.append(f"it matches {_join_overview_values(matched_by_category['maintenance'][:1])} care")
+    if matched_by_category.get("plant_type"):
+        reasons.append(f"it is a {_join_overview_values(matched_by_category['plant_type'][:1])}")
+
+    if reasons:
+        return _join_overview_values(reasons[:3])
+
+    meanings = _compact_context_values(document.get("meanings"), 2) if _query_has_symbolic_intent(user_query) else []
+    occasions = _compact_context_values(document.get("occasions"), 1)
+    if meanings and occasions:
+        return f"it offers {_join_overview_values(meanings)} symbolism and fits {occasions[0]}"
+    if meanings:
+        return f"its listed meaning emphasizes {_join_overview_values(meanings)}"
+    if occasions:
+        return f"it is tied to {occasions[0]}"
+    return "the retrieved flower details give it the strongest overall support"
+
+
+def _fallback_rag_answer(user_query: str, context_documents: list[dict]) -> str:
+    if not context_documents:
+        return "No matching flowers were found."
+
+    top_documents = [doc for doc in context_documents[:2] if doc.get("name")]
+    if not top_documents:
+        return "The strongest flower details are shown below."
+
+    first = top_documents[0]
+    first_name = first.get("name")
+    first_reason = _overview_reason_phrase(first, user_query)
+    if len(top_documents) == 1:
+        return f"For \"{user_query}\", {first_name} is the clearest fit because {first_reason}."
+
+    second = top_documents[1]
+    second_name = second.get("name")
+    second_reason = _overview_reason_phrase(second, user_query)
+    return (
+        f"For \"{user_query}\", {first_name} is the most direct fit because {first_reason}. "
+        f"{second_name} is worth considering when you want a slightly different emphasis: {second_reason}."
+    )
 
 
 def _generate_rag_response(
@@ -535,11 +661,15 @@ def _generate_rag_response(
                 "Answer only from the retrieved flower records below. If a retrieved record only "
                 "partly supports the user's request, say it is a partial fit instead of forcing a "
                 "match. Do not invent meanings, colors, occasions, or care details. "
-                "Write natural card text, not a comma-separated inventory. Never mention RAG, IR, "
+                "Write warm, polished florist-style prose, not a comma-separated inventory. "
+                "The answer should compare the strongest flowers: explain what each is especially "
+                "good for, and why someone might choose one over another. "
+                "Never mention RAG, IR, "
                 "vectors, retrieval, database, matched keywords, score, or context. "
                 "Return JSON only with this exact shape: "
-                "{\"answer\":\"one sentence overall answer\", \"cards\":[{\"name\":\"Flower name\","
+                "{\"answer\":\"2 to 3 sentence overall answer\", \"cards\":[{\"name\":\"Flower name\","
                 "\"rag_summary\":\"one sentence grounded in the retrieved record\"}]}. "
+                "The answer should be 2 to 3 graceful sentences, around 55 to 95 words total. "
                 "Each rag_summary must be one useful sentence, 18 to 38 words, and should explain "
                 "the fit using evidence that matters for the original user query."
             ),
@@ -586,10 +716,14 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
         transform_rationale = f"{unavailable_reason} Using the original query because AI query rewriting is unavailable."
         transform_source = "local"
     else:
-        retrieval_query, transform_rationale = _llm_retrieval_query(client, query)
-        transform_source = "llm"
+        retrieval_query, transform_rationale, transform_source = _llm_retrieval_query(client, query)
 
-    payload = _recommend_with_fallback(retrieval_query, limit, method)
+    payload = _recommend_with_fallback(
+        retrieval_query,
+        limit,
+        method,
+        use_llm_explanations=False,
+    )
     payload["query"] = query
     context_documents = _build_rag_context_documents(payload, limit=limit)
 
@@ -598,6 +732,7 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     answer_source = "llm"
     card_summary_source = "llm"
     if client is not None:
+        time.sleep(1.0)
         answer, card_summaries = _generate_rag_response(
             client,
             query,
@@ -607,10 +742,7 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
 
     if not answer:
         answer_source = "local"
-        answer = _fallback_rag_answer(
-            context_documents,
-            unavailable_reason or "the LLM response could not be generated.",
-        )
+        answer = _fallback_rag_answer(query, context_documents)
     if not card_summaries:
         card_summaries = _fallback_card_summaries(query, context_documents)
         card_summary_source = "local"

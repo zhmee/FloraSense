@@ -61,6 +61,16 @@ MEANING_INTENT_TOKENS = {
     "symbolize",
     "symbolizes",
 }
+NEGATIVE_LOVE_MEANING_PATTERNS = (
+    "decrease of love",
+    "fading love",
+    "lost love",
+    "love denied",
+    "rejected love",
+    "unrequited love",
+    "infidelity",
+    "betrayal",
+)
 OCCASION_WORDS = {
     "anniversary": "anniversary",
     "birthday": "birthday",
@@ -278,8 +288,6 @@ def _query_terms_by_category(query_keywords: Any) -> dict[str, list[str]]:
 
 
 def _query_has_meaning_intent(query: str, categories: set[str]) -> bool:
-    if "meaning" in categories:
-        return True
     query_tokens = set(re.findall(r"[a-z0-9]+", _normalize_key(query)))
     return bool(query_tokens & MEANING_INTENT_TOKENS)
 
@@ -319,6 +327,30 @@ def _matching_query_terms(query_terms: list[str], suggestion_values: Any, limit:
         if not normalized_term:
             continue
         if any(normalized_term == value or normalized_term in value or value in normalized_term for value in normalized_values):
+            matches.append(term)
+
+    return _dedupe(matches)[:limit]
+
+
+def _meaning_value_supports_query_term(term: str, value: str) -> bool:
+    normalized_term = _normalize_key(term)
+    normalized_value = _normalize_key(value)
+    if not normalized_term or not normalized_value:
+        return False
+    if any(pattern in normalized_term for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
+        return False
+    if normalized_term == "love" and any(pattern in normalized_value for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
+        return False
+    return normalized_term == normalized_value or normalized_term in normalized_value or normalized_value in normalized_term
+
+
+def _matching_meaning_query_terms(query_terms: list[str], suggestion_values: Any, limit: int = MAX_EVIDENCE_VALUES) -> list[str]:
+    if not isinstance(suggestion_values, list):
+        return []
+
+    matches = []
+    for term in query_terms:
+        if any(_meaning_value_supports_query_term(term, value) for value in suggestion_values):
             matches.append(term)
 
     return _dedupe(matches)[:limit]
@@ -493,10 +525,14 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
     categories = _query_categories(query_keywords)
     query_terms = _query_terms_by_category(query_keywords)
     meaning_intent = _query_has_meaning_intent(query, categories)
-    meaning_terms = _matching_query_terms(
-        query_terms.get("meaning", []),
-        suggestion.get("meanings"),
-        3,
+    meaning_terms = (
+        _matching_meaning_query_terms(
+            query_terms.get("meaning", []),
+            suggestion.get("meanings"),
+            3,
+        )
+        if meaning_intent
+        else []
     )
     occasion_terms = _matching_query_terms(
         query_terms.get("occasion", []),
@@ -533,7 +569,7 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
 
     reasons = []
     if colors:
-        reasons.append(f"matches the requested {_join_human(colors)} color")
+        reasons.append(f"is available in {_join_human(colors)}")
     if maintenance_terms:
         reasons.append(f"fits the requested {_join_human(maintenance_terms)} care level")
     elif maintenance and ("maintenance" in categories or _values_mentioned_by_query(query, maintenance, 1)):
@@ -606,7 +642,7 @@ def _llm_client():
     if not _llm_explanations_enabled():
         return None
 
-    api_key = os.getenv("SPARK_API_KEY") or os.getenv("API_KEY")
+    api_key = os.getenv("SPARK_API_KEY")
     if not api_key:
         return None
 
@@ -764,12 +800,12 @@ def _generate_llm_explanations(payload: dict) -> dict[str, dict[str, str]]:
     return explanations
 
 
-def add_query_fit_explanations(payload: dict) -> dict:
+def add_query_fit_explanations(payload: dict, use_llm: bool = False) -> dict:
     """Attach a query-aware explanation to each recommendation suggestion."""
     normalized = dict(payload or {})
     query = _clean_text(normalized.get("query"))
     normalized["keywords_used"] = _add_query_breakdown_explanations(normalized)
-    llm_explanations = _generate_llm_explanations(normalized)
+    llm_explanations = _generate_llm_explanations(normalized) if use_llm else {}
 
     suggestions = []
     for suggestion in normalized.get("suggestions", []) or []:

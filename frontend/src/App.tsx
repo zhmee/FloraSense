@@ -304,7 +304,6 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const [resultLimit, setResultLimit] = useState<number>(5)
   const [appliedLimit, setAppliedLimit] = useState<number>(5)
   const [searchMethod, setSearchMethod] = useState<'svd' | 'tfidf'>('svd')
-  const [ragEnabled, setRagEnabled] = useState<boolean>(true)
   const queryInputRef = useRef<HTMLInputElement | null>(null)
   const appRef = useRef<HTMLElement | null>(null)
   const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
@@ -613,8 +612,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
     setError('')
 
     try {
-      const endpoint = ragEnabled ? '/api/rag-recommendations' : '/api/recommendations'
-      const response = await fetch(`${endpoint}?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
+      const response = await fetch(`/api/rag-recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -773,23 +771,6 @@ function App({ isActive = true }: AppProps): JSX.Element {
                     TF-IDF
                   </button>
                 </div>
-                <div className="method-toggle">
-                  <span className="limit-label">Answer Mode:</span>
-                  <button
-                    type="button"
-                    className={`method-chip ${ragEnabled ? 'is-active' : ''}`}
-                    onClick={() => setRagEnabled(true)}
-                  >
-                    RAG
-                  </button>
-                  <button
-                    type="button"
-                    className={`method-chip ${!ragEnabled ? 'is-active' : ''}`}
-                    onClick={() => setRagEnabled(false)}
-                  >
-                    IR only
-                  </button>
-                </div>
               </div>
             </form>
 
@@ -884,10 +865,40 @@ function App({ isActive = true }: AppProps): JSX.Element {
               {results.query && !loading && <p>“{results.query}”</p>}
             </div>
             <div className="results-meta">
-            <span>{results.suggestions.length}/{appliedLimit} shown</span>            
+              <span>{results.suggestions.length}/{appliedLimit} shown</span>
             </div>
           </header>
 
+          {loading && (
+            <section className="analysis-stage-panel">
+              <div className="analysis-stage-copy">
+                <p className="analysis-stage-title">Thinking...</p>
+                <p>I'm reviewing the retrieved flowers, weighing the strongest matches, and preparing a short, grounded overview.</p>
+              </div>
+              <div className="analysis-step-grid">
+                <div><strong>1.</strong> Understand intent</div>
+                <div><strong>2.</strong> Compare candidate flowers</div>
+                <div><strong>3.</strong> Craft the best overview</div>
+              </div>
+            </section>
+          )}
+
+          {results.rag?.answer && !loading && (
+            <section className="ai-overview-section">
+              <div className="ai-overview-head">
+                <h2 className="ai-overview-title">AI Overview</h2>
+                <span className="ai-overview-source">{results.rag.answer_source === 'llm' ? 'RAG' : 'Local fallback'}</span>
+              </div>
+              <p className="ai-overview-text">{results.rag.answer}</p>
+              {results.rag.retrieval_query && results.rag.retrieval_query !== results.query && (
+                <p className="ai-overview-subtext">
+                  Search query: <strong>{results.rag.retrieval_query}</strong>
+                </p>
+              )}
+            </section>
+          )}
+
+          <section className="supporting-flowers-section">
           {loading ? (
             <div className="loading-panel" aria-live="polite">
               <div className="loading-bloom" aria-hidden="true">
@@ -897,7 +908,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 <span className="loading-dot" />
               </div>
               <strong>Ranking flowers</strong>
-              <p>{ragEnabled ? 'Transforming the query, searching the flower index, and grounding the answer.' : 'Encoding the query, searching the latent flower space, and sorting the shortlist.'}</p>
+              <p>Transforming the query, searching the flower index, and synthesizing recommendations.</p>
             </div>
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
@@ -910,10 +921,10 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
                 const queryFitOccasionSummary = suggestion.query_fit_occasion_summary?.trim() ?? ''
-                const frontMeaningText = queryFitExplanation || fullMeaningText
                 const frontOccasionText = queryFitOccasionSummary || fullOccasionText
                 const hasFrontOccasionText = frontOccasionText !== 'Not listed' && frontOccasionText.length > 0
                 const ragSummary = suggestion.rag_summary?.trim() || queryFitExplanation || 'No RAG summary is available for this result.'
+                const frontMeaningText = suggestion.rag_summary?.trim() || queryFitExplanation || fullMeaningText
                 const ragSource = suggestion.rag_source || suggestion.explanation_source || 'local'
                 const isDetailsExpanded = Boolean(
                   expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
@@ -998,7 +1009,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                             </div>
                           </div>
                           <div className="raw-text-block">
-                            <span>{queryFitExplanation ? 'Why this matches' : 'Meaning'}</span>
+                            <span>{suggestion.rag_summary?.trim() || queryFitExplanation ? 'Why this matches' : 'Meaning'}</span>
                             <p>{renderHighlightedText(frontMeaningText, highlightTerms)}</p>
                           </div>
                           {hasFrontOccasionText && (
@@ -1091,6 +1102,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
               No suggestions yet. Start with a color, flower meaning, or maintenance level.
             </div>
           )}
+          </section>
         </div>
         </section>
       </div>
