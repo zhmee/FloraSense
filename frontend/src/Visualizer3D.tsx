@@ -1446,7 +1446,8 @@ const myBouquetScientificNames = useMemo(
 )
 
 useEffect(() => {
-  if (!isActive || !bouquetTrayOpen || myBouquetScientificNames.length < 2) {
+  if (!isActive || myBouquetScientificNames.length < 2) {
+
     setMyBouquetInsights(null)
     setMyBouquetInsightsStatus('idle')
     return
@@ -1616,128 +1617,143 @@ useEffect(() => {
             </div>
           </div>
         </div>
+          
+  
+<aside className="viz-sidebar">
+  <div className="viz-info-card">
+    <h3>🌸 My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''})</h3>
 
-        {showSidebar ? (
-          <aside className="viz-sidebar">
-          <div className="viz-info-card">
-            <h3>Bouquet Health Bar</h3>
-            {selectedBouquet ? (
-              bouquetInsightsStatus === 'loading' ? (
-                <p>Calculating the bouquet meaning balance from its selected flowers...</p>
-              ) : bouquetInsightsStatus === 'error' ? (
-                <p>{bouquetInsightsError ?? 'Bouquet insights failed to load.'}</p>
-              ) : bouquetInsights && bouquetInsights.meanings.length > 0 ? (
-                <div ref={healthListRef} className="viz-health-list">
-                  {bouquetInsights.meanings.map(meaning => (
-                    <div key={meaning.label} className="viz-health-row">
-                      <div className="viz-health-row__head">
-                        <strong>{toTitleCase(meaning.label)}</strong>
-                        <span>{toPercent(meaning.score)}</span>
-                      </div>
-                      <div className="viz-health-row__track" aria-hidden="true">
-                        <span className="viz-health-row__fill" style={{ width: toPercent(meaning.score) }} />
-                      </div>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+      {myBouquetIds.length === 0 && (
+        <span style={{ fontSize: 12, color: 'var(--viz-muted)' }}>
+          Select a flower and click "+ Add to my bouquet"
+        </span>
+      )}
+      {myBouquetIds.map(id => {
+        const f = flowersById.get(id)
+        if (!f) return null
+        return (
+          <button
+            key={id}
+            onClick={() => handleRemoveFromBouquet(id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 999,
+              border: '1px solid rgba(108,86,62,0.18)',
+              background: 'rgba(255,252,248,0.95)',
+              fontSize: 12, color: 'var(--viz-ink)',
+              cursor: 'pointer',
+            }}
+            title="Click to remove"
+          >
+            <span style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: getFlowerColorHex(f), display: 'inline-block',
+            }} />
+            {formatFlowerDisplayName(f.name)}
+            <span style={{ color: 'var(--viz-muted)', marginLeft: 2 }}>×</span>
+          </button>
+        )
+      })}
+    </div>
+
+    {myBouquetIds.length < 2 && (
+      <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
+    )}
+
+    {myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+          Meaning balance
+        </div>
+        <div className="viz-chip-list">
+          {myBouquetInsights.meanings.slice(0, 4).map(m => (
+            <span key={m.label} className="viz-chip">{toTitleCase(m.label)}</span>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {myBouquetInsightsStatus === 'ready' && myBouquetInsights && (myBouquetInsights.recommendations ?? []).length > 0 && (
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+          Recommended additions
+        </div>
+        <div className="viz-recommendation-list">
+          {(myBouquetInsights.recommendations ?? []).slice(0, 3).map(rec => {
+            const atlasFlower = flowersByScientificName.get(normalizeKey(rec.scientific_name))
+            return (
+              <div key={rec.scientific_name} className="viz-recommendation-card">
+                <div className="viz-recommendation-card__head">
+                  <div className="viz-recommendation-card__identity">
+                    {rec.image_url ? (
+                      <img className="viz-recommendation-card__thumb" src={rec.image_url} alt={formatFlowerDisplayName(rec.name)} />
+                    ) : null}
+                    <div>
+                      <strong>{formatFlowerDisplayName(rec.name)}</strong>
+                      <span>{rec.scientific_name}</span>
                     </div>
+                  </div>
+                  <em>{toScoreLabel(rec.score)}</em>
+                </div>
+                <div className="viz-chip-list">
+                  {rec.matched_keywords.slice(0, 2).map(kw => (
+                    <span key={kw.keyword} className="viz-chip">{kw.keyword}</span>
                   ))}
                 </div>
-              ) : (
-                <p>This bouquet does not yet have enough shared meaning signals to build a health bar.</p>
-              )
-            ) : (
-              <p>Select a flower to compute the meaning mix of its local neighborhood.</p>
-            )}
-          </div>
-
-          <div className="viz-info-card">
-            <h3>Bouquet Recommendations</h3>
-            {selectedBouquet ? (
-              bouquetInsightsStatus === 'loading' ? (
-                <p>Finding compatible flowers to extend this bouquet...</p>
-              ) : bouquetInsightsStatus === 'error' ? (
-                <p>{bouquetInsightsError ?? 'Bouquet recommendations failed to load.'}</p>
-              ) : atlasRecommendations.length > 0 ? (
-                <div ref={recommendationListRef} className="viz-recommendation-list">
-                  {atlasRecommendations.map(({ recommendation, atlasFlower }) => {
-                    const displayName = formatFlowerDisplayName(recommendation.name)
-                    return (
-                      <div key={recommendation.scientific_name} className="viz-recommendation-card">
-                        <div className="viz-recommendation-card__head">
-                          <div className="viz-recommendation-card__identity">
-                            {recommendation.image_url ? (
-                              <img
-                                className="viz-recommendation-card__thumb"
-                                src={recommendation.image_url}
-                                alt={displayName}
-                              />
-                            ) : null}
-                            <div>
-                              <strong>{displayName}</strong>
-                              <span>{recommendation.scientific_name}</span>
-                            </div>
-                          </div>
-                          <em>{toScoreLabel(recommendation.score)}</em>
-                        </div>
-                        <div className="viz-chip-list">
-                          {recommendation.matched_keywords.slice(0, 3).map(term => (
-                            <span key={`${recommendation.scientific_name}-${term.keyword}`} className="viz-chip">
-                              {term.keyword}
-                            </span>
-                          ))}
-                        </div>
-                        <p>
-                          {atlasFlower
-                            ? 'Already loaded in the 3D Visualizer.'
-                            : 'Recommended from the full corpus and not currently rendered in this 3D Visualizer view.'}
-                        </p>
-                        {atlasFlower ? (
-                          <button
-                            type="button"
-                            className="viz-toolbar__button viz-toolbar__button--compact"
-                            onClick={() => handleFlowerSelect(atlasFlower.id)}
-                          >
-                            Focus in 3D Visualizer
-                          </button>
-                        ) : null}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p>No additional flowers were recommended for this neighborhood.</p>
-              )
-            ) : (
-              <p>Select a flower to generate compatible flower recommendations.</p>
-            )}
-          </div>
-
-          <div className="viz-info-card">
-            <h3>Semantic Signals</h3>
-            {selectedFlower ? (
-              <div className="viz-meta-block">
-                {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
-                  <div key={label}>
-                    <h4>{label}</h4>
-                    <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
-                  </div>
-                ))}
+                {atlasFlower && (
+                  <button
+                    type="button"
+                    className="viz-toolbar__button viz-toolbar__button--compact"
+                    onClick={() => handleFlowerSelect(atlasFlower.id)}
+                  >
+                    Focus in 3D Visualizer
+                  </button>
+                )}
               </div>
-            ) : <p>Metadata appears here after selecting a flower.</p>}
+            )
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+
+{selectedFlower && (
+  <div className="viz-info-card">
+    <h3>Semantic Signals</h3>
+    <p style={{ fontSize: 12, color: 'var(--viz-muted)', marginBottom: 12 }}>
+      {formatFlowerDisplayName(selectedFlower.name)} · {selectedFlower.scientific_name}
+    </p>
+    <div className="viz-meta-block">
+        
+        {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
+          <div key={label}>
+            <h4>{label}</h4>
+            <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
           </div>
-          </aside>
-        ) : null}
+        ))}
+      </div>
+    </div>
+  )}
+</aside>
       </div>
 
 
 
 {/* ─── BOUQUET STUFF!!!!!!! ──────────────────────────────────── */}
+
 {selectedFlower ? (
   <div style={{
     position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
     zIndex: 10, pointerEvents: 'auto',
   }}>
     {myBouquetIds.includes(selectedFlower.id) ? (
-      <button className="viz-hud__action" style={{ color: '#4d6242', borderColor: 'rgba(103,115,84,0.28)' }}>
-        ✓ In my bouquet
+      <button
+        className="viz-hud__action"
+        style={{ color: '#4d6242', borderColor: 'rgba(103,115,84,0.28)' }}
+        onClick={() => handleRemoveFromBouquet(selectedFlower.id)}
+      >
+        ✓ In my bouquet — click to remove
       </button>
     ) : (
       <button className="viz-hud__action" onClick={() => handleAddToBouquet(selectedFlower.id)}>
@@ -1746,132 +1762,6 @@ useEffect(() => {
     )}
   </div>
 ) : null}
-
-{/* ─── My Bouquet tray (additive) ─────────────────────────────────────────── */}
-<div style={{
-  position: 'fixed', bottom: 28, left: 28, zIndex: 20,
-  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
-  maxWidth: 360,
-}}>
-  {/* Tray pill */}
-  <button
-    className="viz-hud__action"
-    onClick={() => setBouquetTrayOpen(o => !o)}
-    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-  >
-    <span>🌸 My Bouquet</span>
-    {myBouquetIds.length > 0 && (
-      <span style={{
-        background: 'rgba(184,107,79,0.14)', color: '#b86b4f',
-        fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '2px 8px',
-      }}>
-        {myBouquetIds.length}
-      </span>
-    )}
-  </button>
-
-  {/* Expanded tray */}
-  {bouquetTrayOpen && (
-    <div className="viz-hud__badge" style={{ width: 320, borderRadius: 28, padding: '16px 18px' }}>
-      <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--viz-ink)' }}>
-        My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''})
-      </h4>
-
-      {/* Flower chips */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {myBouquetIds.length === 0 && (
-          <span style={{ fontSize: 12, color: 'var(--viz-muted)' }}>
-            Select a flower and click "+ Add to my bouquet"
-          </span>
-        )}
-        {myBouquetIds.map(id => {
-          const f = flowersById.get(id)
-          if (!f) return null
-          return (
-            <button
-              key={id}
-              onClick={() => handleRemoveFromBouquet(id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '4px 10px', borderRadius: 999,
-                border: '1px solid rgba(108,86,62,0.18)',
-                background: 'rgba(255,252,248,0.95)',
-                fontSize: 12, color: 'var(--viz-ink)',
-                cursor: 'pointer',
-              }}
-              title="Click to remove"
-            >
-              <span style={{
-                width: 10, height: 10, borderRadius: '50%',
-                background: getFlowerColorHex(f), display: 'inline-block',
-              }} />
-              {formatFlowerDisplayName(f.name)}
-              <span style={{ color: 'var(--viz-muted)', marginLeft: 2 }}>×</span>
-            </button>
-          )
-        })}
-      </div>
-{/* Meaning bars */}
-{myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
-  <div style={{ marginBottom: 12 }}>
-    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-      Meaning balance
-    </div>
-    <div className="viz-chip-list">
-      {myBouquetInsights.meanings.slice(0, 4).map(m => (
-        <span key={m.label} className="viz-chip">{toTitleCase(m.label)}</span>
-      ))}
-    </div>
-  </div>
-)}
-    {myBouquetInsightsStatus === 'ready' && myBouquetInsights && (myBouquetInsights.recommendations ?? []).length > 0 && (
-  <div>
-    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-      Recommended additions
-    </div>
-    <div className="viz-recommendation-list">
-      {(myBouquetInsights.recommendations ?? []).slice(0, 3).map(rec => {
-        const atlasFlower = flowersByScientificName.get(normalizeKey(rec.scientific_name))
-        return (
-          <div key={rec.scientific_name} className="viz-recommendation-card">
-            <div className="viz-recommendation-card__head">
-              <div className="viz-recommendation-card__identity">
-                {rec.image_url ? (
-                  <img className="viz-recommendation-card__thumb" src={rec.image_url} alt={formatFlowerDisplayName(rec.name)} />
-                ) : null}
-                <div>
-                  <strong>{formatFlowerDisplayName(rec.name)}</strong>
-                  <span>{rec.scientific_name}</span>
-                </div>
-              </div>
-              <em>{toScoreLabel(rec.score)}</em>
-            </div>
-            <div className="viz-chip-list">
-              {rec.matched_keywords.slice(0, 2).map(kw => (
-                <span key={kw.keyword} className="viz-chip">{kw.keyword}</span>
-              ))}
-            </div>
-            {atlasFlower && (
-              <button
-                type="button"
-                className="viz-toolbar__button viz-toolbar__button--compact"
-                onClick={() => { handleFlowerSelect(atlasFlower.id); setBouquetTrayOpen(false) }}
-              >
-                Focus in 3D Visualizer
-              </button>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  </div>
-)}
-      {myBouquetIds.length < 2 && (
-        <p style={{ fontSize: 12, color: 'var(--viz-muted)' }}>Add 2+ flowers to see meaning balance</p>
-      )}
-    </div>
-  )}
-</div>
 
 {/* ADDED NEWLY */}
     </section>
