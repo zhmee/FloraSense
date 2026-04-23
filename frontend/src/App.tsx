@@ -919,12 +919,18 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
                 const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
+                const irSummary = suggestion.ir_summary?.trim() || queryFitExplanation
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
                 const queryFitOccasionSummary = suggestion.query_fit_occasion_summary?.trim() ?? ''
+                const ragOccasionSummary = suggestion.rag_occasion_summary?.trim() ?? ''
                 const frontOccasionText = queryFitOccasionSummary || fullOccasionText
                 const hasFrontOccasionText = frontOccasionText !== 'Not listed' && frontOccasionText.length > 0
                 const ragSummary = suggestion.rag_summary?.trim() || queryFitExplanation || 'No RAG summary is available for this result.'
-                const frontMeaningText = suggestion.rag_summary?.trim() || queryFitExplanation || fullMeaningText
+                const ragCombinedSummary =
+                  ragOccasionSummary && !ragSummary.toLowerCase().includes(ragOccasionSummary.toLowerCase())
+                    ? `${ragSummary} ${ragOccasionSummary}`
+                    : ragSummary
+                const frontMeaningText = irSummary || fullMeaningText
                 const ragSource = suggestion.rag_source || suggestion.explanation_source || 'local'
                 const isDetailsExpanded = Boolean(
                   expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
@@ -984,14 +990,14 @@ function App({ isActive = true }: AppProps): JSX.Element {
                       )}
                     </div>
 
-                    <div className="card-flip-stage" aria-label={isCardFlipped ? 'RAG-fixed result' : 'non-RAG recommendation result'}>
+                    <div className="card-flip-stage" aria-label={isCardFlipped ? 'RAG recommendation result' : 'retrieved flower details'}>
                       <div className="card-flip-inner">
                         <section
                           className="comparison-panel comparison-panel--raw card-face card-face--front"
                           aria-hidden={isCardFlipped}
                         >
                           <div className="comparison-panel__head">
-                            <span className="detail-label">Non-RAG Output</span>
+                            <span className="detail-label">Retrieved Flower Details</span>
                             <small>{searchMethod.toUpperCase()}</small>
                           </div>
                           <div className="raw-evidence-grid">
@@ -1009,12 +1015,12 @@ function App({ isActive = true }: AppProps): JSX.Element {
                             </div>
                           </div>
                           <div className="raw-text-block">
-                            <span>{suggestion.rag_summary?.trim() || queryFitExplanation ? 'Why this matches' : 'Meaning'}</span>
+                            <span>{irSummary ? 'IR summary' : 'Meaning'}</span>
                             <p>{renderHighlightedText(frontMeaningText, highlightTerms)}</p>
                           </div>
                           {hasFrontOccasionText && (
                             <div className="raw-text-block">
-                              <span>{queryFitOccasionSummary ? 'Occasion fit' : 'Occasions'}</span>
+                              <span>{queryFitOccasionSummary ? 'Possible occasions' : 'Occasions'}</span>
                               <p>{renderHighlightedText(frontOccasionText, highlightTerms)}</p>
                             </div>
                           )}
@@ -1025,15 +1031,32 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           aria-hidden={!isCardFlipped}
                         >
                           <div className="comparison-panel__head">
-                            <span className="detail-label">RAG-Fixed Output</span>
+                            <span className="detail-label">RAG Recommendation</span>
                             <small>{ragSource}</small>
                           </div>
-                          <p className="rag-card-summary">
-                            {renderHighlightedText(ragSummary, highlightTerms)}
-                          </p>
+                          <div className="rag-card-section">
+                            <span>Why this matches</span>
+                            <p className="rag-card-summary">
+                              {renderHighlightedText(ragCombinedSummary, highlightTerms)}
+                            </p>
+                          </div>
+                          <div className="rag-card-facts">
+                            <div>
+                              <span>Colors</span>
+                              <strong>{formatLabel(suggestion.colors)}</strong>
+                            </div>
+                            <div>
+                              <span>Care</span>
+                              <strong>{formatMaintenanceLabel(suggestion.maintenance)}</strong>
+                            </div>
+                            <div>
+                              <span>Type</span>
+                              <strong>{formatLabel(suggestion.plant_types)}</strong>
+                            </div>
+                          </div>
                           {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
                             <div className="rag-card-query">
-                              <span>AI-fixed query sent to IR</span>
+                              <span>Refined search query</span>
                               <strong>{results.rag.retrieval_query}</strong>
                             </div>
                           )}

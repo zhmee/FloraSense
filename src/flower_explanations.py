@@ -84,6 +84,11 @@ OCCASION_WORDS = {
     "graduation": "graduations",
     "graduations": "graduations",
     "mother": "Mother's Day",
+    "mothers": "Mother's Day",
+    "mom": "Mother's Day",
+    "moms": "Mother's Day",
+    "mum": "Mother's Day",
+    "mums": "Mother's Day",
     "sympathy": "sympathy",
     "valentine": "Valentine's Day",
     "wedding": "wedding",
@@ -134,7 +139,15 @@ def _canonicalize_query_terms(query: str) -> str:
 
 
 def _clean_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    text = (
+        str(value or "")
+        .replace("�", "'")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _is_missing_value(value: str) -> bool:
@@ -419,6 +432,97 @@ def _known_occasion_labels(values: Any, limit: int = MAX_EVIDENCE_VALUES) -> lis
     return _dedupe(labels)[:limit]
 
 
+def _occasion_label_matches_query(label: str, query_tokens: set[str]) -> bool:
+    normalized_label = _normalize_key(label)
+    if not normalized_label or not query_tokens:
+        return False
+    label_tokens = set(re.findall(r"[a-z0-9]+", normalized_label))
+    if label == "Mother's Day":
+        return bool(query_tokens & {"mother", "mothers", "mom", "moms", "mum", "mums"})
+    return bool(label_tokens & query_tokens)
+
+
+def _is_usable_occasion_phrase(value: str) -> bool:
+    normalized = _normalize_key(value)
+    if not normalized:
+        return False
+    if normalized.startswith(("the flower", "its ", "this ", "that ", "their ")):
+        return False
+    return any(
+        re.search(rf"(?<!\w){re.escape(token)}(?!\w)", normalized)
+        for token in OCCASION_WORDS
+    )
+
+
+def _expanded_occasion_query_tokens(query_tokens: set[str]) -> set[str]:
+    tokens = set(query_tokens)
+    if tokens & {"mother", "mothers", "mom", "moms", "mum", "mums"}:
+        tokens.update({"mother", "mothers", "mom", "moms", "mum", "mums"})
+    return tokens
+
+
+def _occasion_detail_clause(query: str, values: Any) -> str:
+    if not isinstance(values, list):
+        return ""
+
+    query_tokens = _expanded_occasion_query_tokens(set(_query_signal_tokens(query)))
+    if not query_tokens:
+        return ""
+
+    for value in values:
+        for chunk in re.split(r"(?<=[.!?])\s+|[;\n]+", _clean_text(value)):
+            cleaned = chunk.strip(" .,:")
+            normalized_chunk = _normalize_key(cleaned)
+            if not cleaned or not normalized_chunk or _is_missing_value(cleaned):
+                continue
+            if not any(
+                re.search(rf"(?<!\w){re.escape(token)}(?!\w)", normalized_chunk)
+                for token in query_tokens
+            ):
+                continue
+
+            detail = cleaned
+            if ":" in detail:
+                heading, remainder = [part.strip(" .,:;-") for part in detail.split(":", 1)]
+                if any(
+                    re.search(rf"(?<!\w){re.escape(token)}(?!\w)", _normalize_key(heading))
+                    for token in query_tokens
+                ) and remainder:
+                    detail = remainder
+
+            detail = re.sub(r"^offer\s+", "", detail, flags=re.IGNORECASE).strip(" .,:;-")
+            detail = re.sub(r"^as\s+", "", detail, flags=re.IGNORECASE).strip(" .,:;-")
+            detail = re.sub(r"\bthe flower['’]s\b", "its", detail, flags=re.IGNORECASE)
+            detail = re.sub(r"\bits symbolism\b", "its symbolism", detail, flags=re.IGNORECASE)
+            before_dash, dash, after_dash = detail.partition(" - ")
+            if dash and after_dash and any(
+                re.search(rf"(?<!\w){re.escape(token)}(?!\w)", _normalize_key(before_dash))
+                for token in query_tokens
+            ):
+                detail = after_dash.strip(" .,:;-")
+            detail = re.sub(
+                r",?\s+from\s+(mother's day)\s+to\s+[^.]+",
+                r", including \1",
+                detail,
+                flags=re.IGNORECASE,
+            )
+            if re.search(r"\bmother['’]?s day surprise sorted\??$", detail, flags=re.IGNORECASE):
+                detail = "it is presented as a Mother's Day surprise choice"
+            for separator in (" while ", " however, ", " needless to say, "):
+                before, found, _after = detail.partition(separator)
+                if found and any(
+                    re.search(rf"(?<!\w){re.escape(token)}(?!\w)", _normalize_key(before))
+                    for token in query_tokens
+                ):
+                    detail = before.strip(" .,:;-")
+                    break
+            if not detail:
+                continue
+            return _shorten_words(detail, 28).rstrip(".")
+
+    return ""
+
+
 def _occasion_evidence_labels(query: str, values: Any, limit: int = MAX_EVIDENCE_VALUES) -> list[str]:
     labels = _compact_evidence_labels(values, limit)
     if len(labels) >= limit:
@@ -427,8 +531,18 @@ def _occasion_evidence_labels(query: str, values: Any, limit: int = MAX_EVIDENCE
         return labels
 
     query_tokens = _query_signal_tokens(query)
+    known_labels = _known_occasion_labels(values, limit=12)
     if not query_tokens:
-        return _dedupe(labels + _known_occasion_labels(values, limit))[:limit]
+        return _dedupe(labels + known_labels)[:limit]
+
+    query_token_set = _expanded_occasion_query_tokens(set(query_tokens))
+    query_matched_known_labels = [
+        label
+        for label in known_labels
+        if _occasion_label_matches_query(label, query_token_set)
+    ]
+    if query_matched_known_labels:
+        return _dedupe(query_matched_known_labels + labels)[:limit]
 
     phrase_candidates = []
     for value in values:
@@ -443,14 +557,14 @@ def _occasion_evidence_labels(query: str, values: Any, limit: int = MAX_EVIDENCE
                     continue
 
                 prefix_match = re.match(r"^([A-Za-z0-9'’ -]{4,48}?)(?:\s+[-:–—]\s+|,)", cleaned)
-                if prefix_match:
+                if prefix_match and _is_usable_occasion_phrase(prefix_match.group(1)):
                     phrase_candidates.append(prefix_match.group(1).strip(" .,:;-"))
 
                 phrase = _extract_phrase_around_token(cleaned, token)
-                if phrase:
+                if phrase and _is_usable_occasion_phrase(phrase):
                     phrase_candidates.append(phrase)
 
-    return _dedupe(labels + phrase_candidates + _known_occasion_labels(values, limit))[:limit]
+    return _dedupe(labels + phrase_candidates + known_labels)[:limit]
 
 
 def _join_human(values: list[str]) -> str:
@@ -468,6 +582,15 @@ def _shorten_words(text: str, max_words: int = 42) -> str:
     if len(words) <= max_words:
         return " ".join(words)
     return " ".join(words[:max_words]).rstrip(" ,;:.") + "."
+
+
+def _trim_dangling_tail(text: str) -> str:
+    return re.sub(
+        r"\s+(?:a|an|and|at|for|from|in|of|on|the|to|with)(?:\s+(?:a|an|the))?$",
+        "",
+        _clean_text(text),
+        flags=re.IGNORECASE,
+    ).strip(" ,;:.")
 
 
 def _is_user_facing_text(text: str) -> bool:
@@ -539,8 +662,15 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
         suggestion.get("occasions"),
         2,
     )
+    occasion_labels = (
+        _occasion_evidence_labels(query, suggestion.get("occasions"), 2)
+        if "occasion" in categories or _keyword_terms(suggestion, {"occasion"})
+        else []
+    )
     meanings = _compact_evidence_labels(suggestion.get("meanings"), 3)
     maintenance = _compact_values(suggestion.get("maintenance"), 1)
+    display_colors = _compact_values(suggestion.get("colors"), 2)
+    display_plant_types = _compact_values(suggestion.get("plant_types"), 2)
     colors = _matching_query_terms(query_terms.get("color", []), suggestion.get("colors"), 2)
     if not colors:
         colors = _values_mentioned_by_query(query, suggestion.get("colors"), 2)
@@ -580,6 +710,13 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
         reasons.append(f"directly supports {_join_human(meaning_terms)}")
     if occasion_terms:
         reasons.append(f"suits {_join_human(occasion_terms[:2])}")
+    elif occasion_labels:
+        occasion_detail = _occasion_detail_clause(query, suggestion.get("occasions"))
+        if occasion_detail:
+            concise_detail = _trim_dangling_tail(_shorten_words(occasion_detail, 15).rstrip("."))
+            reasons.append(f"has occasion evidence for {occasion_labels[0]}: {concise_detail}")
+        else:
+            reasons.append(f"has occasion evidence for {_join_human(occasion_labels[:2])}")
 
     query_clause = f' for "{_clean_text(query)}"' if _clean_text(query) else ""
     if not reasons:
@@ -590,18 +727,35 @@ def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = No
     if unsupported_focus and reasons:
         return _sentence_case(
             _shorten_words(
-                f"{name} is a partial fit{query_clause}: it {_join_human(reasons)}, but the visible evidence does not clearly support {_join_human(unsupported_focus[:2])}.",
-                44,
+                f"{name} is a partial fit{query_clause}. Retrieved evidence shows it {_join_human(reasons)}, while the visible fields do not clearly support {_join_human(unsupported_focus[:2])}.",
+                54,
             )
         )
 
-    return _sentence_case(_shorten_words(f"{name} works{query_clause} because it {_join_human(reasons)}.", 38))
+    support_sentence = f"The IR system matched {name}{query_clause} using retrieved evidence that it {_join_human(reasons)}."
+    attribute_bits = []
+    if display_colors:
+        attribute_bits.append(f"colors: {_join_human(display_colors)}")
+    if maintenance:
+        attribute_bits.append(f"care: {maintenance[0]}")
+    if display_plant_types:
+        attribute_bits.append(f"type: {_join_human(display_plant_types)}")
+    if attribute_bits:
+        support_sentence += f" Retrieved fields also show {'; '.join(attribute_bits)}."
+    return _sentence_case(_shorten_words(support_sentence, 64))
 
 
 def _fallback_occasion_summary(query: str, suggestion: dict) -> str:
-    name = _clean_text(suggestion.get("name")) or "This flower"
     occasions = _occasion_evidence_labels(query, suggestion.get("occasions"), 3)
-    keywords = _keyword_terms(suggestion, {"meaning", "occasion"})[:3]
+    all_occasion_labels = _known_occasion_labels(suggestion.get("occasions"), 6)
+    if all_occasion_labels:
+        query_tokens = _expanded_occasion_query_tokens(set(_query_signal_tokens(query)))
+        query_matched_labels = [
+            label
+            for label in all_occasion_labels
+            if _occasion_label_matches_query(label, query_tokens)
+        ]
+        occasions = _dedupe(query_matched_labels + all_occasion_labels)[:4]
 
     if not occasions:
         return ""
@@ -613,23 +767,9 @@ def _fallback_occasion_summary(query: str, suggestion: dict) -> str:
         for label in occasions
     )
     if not has_occasion_intent:
-        return _sentence_case(_shorten_words(f"{occasion_clause}.", 12))
+        return occasion_clause
 
-    query_clause = f' for "{_clean_text(query)}"' if _clean_text(query) else " for this request"
-    if keywords:
-        return _sentence_case(
-            _shorten_words(
-                f"{name} is a good occasion fit{query_clause} when the moment is {occasion_clause}; its symbolism supports {_join_human(keywords)}.",
-                44,
-            )
-        )
-
-    return _sentence_case(
-        _shorten_words(
-            f"{name} is a good occasion fit{query_clause} when the moment is {occasion_clause}.",
-            44,
-        )
-    )
+    return occasion_clause
 
 
 def _llm_explanations_enabled() -> bool:

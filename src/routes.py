@@ -409,6 +409,10 @@ def _build_rag_context_documents(payload: dict, limit: int = 5) -> list[dict]:
                 "score": suggestion.get("score"),
                 "non_rag_explanation": suggestion.get("query_fit_explanation", ""),
                 "non_rag_occasion_summary": suggestion.get("query_fit_occasion_summary", ""),
+                "has_occasion_evidence": bool(
+                    suggestion.get("query_fit_occasion_summary")
+                    or suggestion.get("occasions")
+                ),
                 "colors": _compact_context_values(suggestion.get("colors"), 5),
                 "maintenance": _compact_context_values(suggestion.get("maintenance"), 2),
                 "plant_types": _compact_context_values(suggestion.get("plant_types"), 3),
@@ -449,6 +453,7 @@ def _format_flower_rag_context(context_documents: list[dict]) -> str:
             f"### [{document.get('rank')}] {document.get('name') or 'Unnamed flower'}",
             f"- **Score:** {document.get('score')}",
             f"- **Scientific name:** {document.get('scientific_name') or 'Not listed'}",
+            f"- **Has occasion evidence:** {'yes' if document.get('has_occasion_evidence') else 'no'}",
             _format_context_list("Colors", document.get("colors") or []),
             _format_context_list("Plant types", document.get("plant_types") or []),
             _format_context_list("Maintenance", document.get("maintenance") or []),
@@ -459,13 +464,25 @@ def _format_flower_rag_context(context_documents: list[dict]) -> str:
             str(document.get("non_rag_explanation") or "").split()
         )
         if non_rag_explanation:
-            lines.extend(["", "**Non-RAG card text:**", non_rag_explanation])
+            lines.extend(
+                [
+                    "",
+                    '**Existing "Why this matches" card text to improve:**',
+                    non_rag_explanation,
+                ]
+            )
 
         non_rag_occasion = " ".join(
             str(document.get("non_rag_occasion_summary") or "").split()
         )
         if non_rag_occasion:
-            lines.extend(["", "**Non-RAG occasion text:**", non_rag_occasion])
+            lines.extend(
+                [
+                    "",
+                    "**Existing occasion fit text to improve:**",
+                    non_rag_occasion,
+                ]
+            )
 
         meanings = document.get("meanings") or []
         if meanings:
@@ -558,12 +575,20 @@ def _local_card_summary(user_query: str, document: dict) -> str:
     return f"{name} has limited support for \"{user_query}\" because the retrieved record has sparse descriptive evidence."
 
 
-def _fallback_card_summaries(user_query: str, context_documents: list[dict]) -> dict[str, str]:
-    return {
-        _rag_name_key(document.get("name", "")): _local_card_summary(user_query, document)
-        for document in context_documents
-        if document.get("name")
-    }
+def _fallback_card_summaries(user_query: str, context_documents: list[dict]) -> dict[str, dict[str, str]]:
+    summaries = {}
+    for document in context_documents:
+        name = document.get("name")
+        if not name:
+            continue
+        summaries[_rag_name_key(name)] = {
+            "rag_summary": _local_card_summary(user_query, document),
+            "ir_summary": _local_card_summary(user_query, document),
+            "rag_occasion_summary": " ".join(
+                str(document.get("non_rag_occasion_summary") or "").split()
+            ),
+        }
+    return summaries
 
 
 def _join_overview_values(values: list[str]) -> str:
@@ -648,7 +673,7 @@ def _generate_rag_response(
     user_query: str,
     retrieval_query: str,
     context_documents: list[dict],
-) -> tuple[str, dict[str, str]]:
+) -> tuple[str, dict[str, dict[str, str]]]:
     if not context_documents:
         return "I could not find matching flower records to ground an answer.", {}
 
@@ -664,14 +689,43 @@ def _generate_rag_response(
                 "Write warm, polished florist-style prose, not a comma-separated inventory. "
                 "The answer should compare the strongest flowers: explain what each is especially "
                 "good for, and why someone might choose one over another. "
+                "For every card summary, use the existing 'Why this matches' card text and "
+                "occasion fit text as starting evidence, then rewrite both into one deeper "
+                "user-facing explanation grounded in the retrieved record. Include why the flower "
+                "matches the query, what evidence supports that match, and how its occasion fit "
+                "matters when occasion evidence is present. If the existing text is awkward or "
+                "thin, improve it with the listed colors, plant type, maintenance, meanings, "
+                "occasions, and matched evidence. Do not copy weak fallback phrases like "
+                "'fits mother day', 'visible evidence', or 'symbolism supports' verbatim. "
+                "For every card occasion summary, rewrite the existing occasion fit text into "
+                "a graceful sentence about when the flower is suitable. If a record says it has "
+                "occasion evidence, rag_occasion_summary must not be empty; return an empty "
+                "string only when the record has no occasion evidence. "
+                "For every card ir_summary, summarize the retrieval evidence in a plain, useful "
+                "style for the raw IR card. It should be different from rag_summary: shorter, "
+                "more factual, and focused on concrete evidence such as colors, plant type, "
+                "maintenance, meanings, occasions, and matched terms. Explain why the evidence "
+                "connects to the user's query instead of only listing attributes. "
                 "Never mention RAG, IR, "
                 "vectors, retrieval, database, matched keywords, score, or context. "
                 "Return JSON only with this exact shape: "
-                "{\"answer\":\"2 to 3 sentence overall answer\", \"cards\":[{\"name\":\"Flower name\","
-                "\"rag_summary\":\"one sentence grounded in the retrieved record\"}]}. "
+                "{\"answer\":\"2 to 3 sentence overall answer\", "
+                "\"cards\":[{\"rank\":1,\"name\":\"exact Flower name\","
+                "\"scientific_name\":\"exact scientific name\","
+                "\"ir_summary\":\"1 to 2 concise evidence sentences for the raw card\","
+                "\"rag_summary\":\"2 to 3 sentences grounded in the retrieved record\","
+                "\"rag_occasion_summary\":\"one sentence about occasion fit or empty string\"}]}. "
                 "The answer should be 2 to 3 graceful sentences, around 55 to 95 words total. "
-                "Each rag_summary must be one useful sentence, 18 to 38 words, and should explain "
-                "the fit using evidence that matters for the original user query."
+                "The cards array must contain exactly one entry for every retrieved flower record, "
+                "in the same order, using the exact rank, name, and scientific name shown. "
+                "Do not skip duplicated or similar-looking records; each retrieved record needs "
+                "its own ir_summary, rag_summary, and rag_occasion_summary. "
+                "Each ir_summary must be 1 to 2 useful sentences, 35 to 60 words total, and must "
+                "not copy the rag_summary. "
+                "Each rag_summary must be 2 to 3 useful sentences, 45 to 80 words total, and "
+                "should explain the fit using evidence that matters for the original user query. Each "
+                "rag_occasion_summary must be one useful sentence, 14 to 30 words, focused only "
+                "on occasion evidence."
             ),
         },
         {
@@ -692,16 +746,33 @@ def _generate_rag_response(
 
     parsed = _extract_json_object(content)
     answer = str(parsed.get("answer") or "").strip()
-    card_summaries = {}
+    card_summaries: dict[str, dict[str, str]] = {}
     cards = parsed.get("cards")
     if isinstance(cards, list):
         for card in cards:
             if not isinstance(card, dict):
                 continue
+            rank = card.get("rank")
+            try:
+                rank_number = int(rank)
+            except (TypeError, ValueError):
+                rank_number = None
             name = str(card.get("name") or "").strip()
+            scientific_name = str(card.get("scientific_name") or "").strip()
+            ir_summary = str(card.get("ir_summary") or "").strip()
             summary = str(card.get("rag_summary") or "").strip()
-            if name and summary:
-                card_summaries[_rag_name_key(name)] = summary
+            occasion_summary = str(card.get("rag_occasion_summary") or "").strip()
+            card_text = {
+                "ir_summary": ir_summary,
+                "rag_summary": summary,
+                "rag_occasion_summary": occasion_summary,
+            }
+            if (ir_summary or summary or occasion_summary) and rank_number is not None:
+                card_summaries[f"rank:{rank_number}"] = card_text
+            if name and (ir_summary or summary or occasion_summary):
+                card_summaries[_rag_name_key(name)] = card_text
+            if scientific_name and (ir_summary or summary or occasion_summary):
+                card_summaries[f"scientific:{_rag_name_key(scientific_name)}"] = card_text
 
     if not answer:
         answer = content
@@ -747,10 +818,23 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
         card_summaries = _fallback_card_summaries(query, context_documents)
         card_summary_source = "local"
 
-    for suggestion in payload.get("suggestions", []) or []:
+    for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
         name = suggestion.get("name", "")
+        scientific_name = suggestion.get("scientific_name", "")
         name_key = _rag_name_key(name)
-        suggestion["rag_summary"] = card_summaries.get(name_key) or _local_card_summary(
+        scientific_key = f"scientific:{_rag_name_key(scientific_name)}"
+        card_text = (
+            card_summaries.get(f"rank:{suggestion_index}")
+            or card_summaries.get(name_key)
+            or card_summaries.get(scientific_key)
+            or {}
+        )
+        summary = card_text.get("rag_summary", "")
+        ir_summary = card_text.get("ir_summary", "")
+        occasion_summary = card_text.get("rag_occasion_summary", "")
+        suggestion["ir_summary"] = ir_summary or suggestion.get("query_fit_explanation", "")
+        suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
+        suggestion["rag_summary"] = summary or _local_card_summary(
             query,
             {
                 "name": name,
@@ -764,7 +848,17 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
                 "plant_types": suggestion.get("plant_types", []),
             },
         )
-        suggestion["rag_source"] = card_summary_source if name_key in card_summaries else "local"
+        suggestion["rag_occasion_summary"] = (
+            occasion_summary
+            if card_summary_source == "llm"
+            else occasion_summary or suggestion.get("query_fit_occasion_summary", "")
+        )
+        suggestion["rag_source"] = card_summary_source if summary else "local"
+        suggestion["rag_occasion_source"] = (
+            card_summary_source
+            if occasion_summary
+            else suggestion.get("occasion_summary_source", "")
+        )
 
     payload["rag"] = {
         "user_query": query,

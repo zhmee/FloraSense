@@ -23,8 +23,12 @@ export interface FlowerSuggestion {
   score: number
   query_fit_explanation?: string
   query_fit_occasion_summary?: string
+  ir_summary?: string
+  ir_summary_source?: 'llm' | 'local' | ''
   rag_summary?: string
+  rag_occasion_summary?: string
   rag_source?: 'llm' | 'local' | ''
+  rag_occasion_source?: 'llm' | 'local' | ''
   explanation_source?: 'llm' | 'local'
   occasion_summary_source?: 'llm' | 'local' | ''
   matched_keywords: MatchedKeyword[]
