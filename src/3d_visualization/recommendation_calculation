@@ -19,6 +19,7 @@ def get_bouquet_recommendations(selected_scientific_names: list[str]) -> dict:
 
     # fetch flower metadata for the selected flowers using the public interface
     data = get_flower_vectors(selected_scientific_names)
+    
     selected_flowers = data["flowers"]  # list of flower dicts with name, meanings, colors, etc.
 
     # if none of the scientific names matched anything in the corpus, return early

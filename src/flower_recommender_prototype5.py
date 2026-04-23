@@ -109,32 +109,6 @@ def _load_glove() -> dict[str, np.ndarray]:
     print(f"[GloVe] loaded {len(words):,} vectors, shape {vectors.shape}")
     return dict(zip(words.tolist(), vectors))
 
- #glove is so slow: 
-def convert_glove_to_npy() -> None:
-    """
-    One-time conversion: glove .txt → two .npy files for fast loading.
-    Run this once from the command line:  python -c "from flower_recommender_prototype3 import convert_glove_to_npy; convert_glove_to_npy()"
-    After that, _load_glove() will use the fast binary files automatically.
-    """
-    print(f"[GloVe] converting {GLOVE_PATH.name} to binary — this runs once...")
-    words = []
-    vectors = []
-    with GLOVE_PATH.open(encoding="utf-8") as f:
-        for line in f:
-            parts = line.rstrip().split(" ")
-            if len(parts) != GLOVE_DIM + 1:
-                continue
-            try:
-                words.append(parts[0])
-                vectors.append(np.array(parts[1:], dtype=np.float32))
-            except ValueError:
-                continue
-
-    vocab_path = GLOVE_PATH.with_suffix(".vocab.npy")
-    vecs_path  = GLOVE_PATH.with_suffix(".vecs.npy")
-    np.save(str(vocab_path), np.array(words, dtype=object))
-    np.save(str(vecs_path),  np.stack(vectors).astype(np.float32))
-    print(f"[GloVe] saved {len(words):,} vectors to {vecs_path.name}")
 
 def _embed_text(text: str, glove: dict[str, np.ndarray]) -> np.ndarray | None:
     """

@@ -13,8 +13,7 @@ from __future__ import annotations
 from collections import defaultdict
 from functools import lru_cache
 import re
-from pathlib import Path
-from scipy.sparse import hstack
+
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -25,14 +24,6 @@ import flower_recommender_prototype3 as p3
 from utils import split_meaning_cell
 from flower_radar_chart import build_latent_radar_chart, select_latent_axes
 
-#Glove stuf
-GLOVE_VECS_PATH  = Path(__file__).resolve().parent / "data" / "vectors.npy"
-GLOVE_VOCAB_PATH = Path(__file__).resolve().parent / "data" / "vocab.npy"
-GLOVE_DIM  = 100 
-GLOVE_WEIGHT = 0.3
-
-# token pattern because we need words for matching/displaying
-TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
 MAX_SVD_COMPONENTS = 24
 MIN_SVD_COMPONENTS = 12
@@ -186,97 +177,6 @@ SEMANTIC_BENCHMARK_QUERIES = (
     "gratitude",
     "loveliness",
 )
-
-# ============================================================================
-# GloVe helpers
-# ============================================================================
-@lru_cache(maxsize=1)
-def _load_glove() -> dict[str, np.ndarray]:
-    if not GLOVE_VECS_PATH.exists() or not GLOVE_VOCAB_PATH.exists():
-        print("[GloVe] .npy files not found — run your preprocessing script first.")
-        return {}
-
-    print("[GloVe] loading from preprocessed .npy files...")
-    words   = np.load(str(GLOVE_VOCAB_PATH), allow_pickle=True)
-    vectors = np.load(str(GLOVE_VECS_PATH))
-    print(f"[GloVe] loaded {len(words):,} vectors, shape {vectors.shape}")
-    return dict(zip(words.tolist(), vectors))
-
-
-def _embed_text(text: str, glove: dict[str, np.ndarray]) -> np.ndarray | None:
-    """
-    Embed a piece of text by mean-pooling the GloVe vectors of its tokens.
- 
-    Returns None when no tokens in the text have GloVe coverage so the caller
-    can decide how to handle the gap (typically fall back to SVD score).
-    """
-    if not glove or not text:
-        return None
- 
-    tokens = TOKEN_PATTERN.findall(text.lower())
-    vectors = [glove[token] for token in tokens if token in glove]
-    if not vectors:
-        return None
- 
-    # mean-pool then L2-normalise so cosine similarity = dot product later
-    mean_vec = np.mean(vectors, axis=0).astype(np.float32)
-    norm = float(np.linalg.norm(mean_vec))
-    if norm < 1e-9:
-        return None
-    return mean_vec / norm
- 
- 
-def _build_glove_matrix(
-    flowers: list[dict],
-    glove: dict[str, np.ndarray],
-) -> np.ndarray | None:
-    """
-    Pre-compute one normalised GloVe embedding per flower document.
- 
-    Returns a float32 array of shape (n_flowers, GLOVE_DIM), or None when
-    GloVe is unavailable so downstream code can skip the fusion step cleanly.
-    """
-    if not glove:
-        return None
- 
-    rows = []
-    for flower in flowers:
-        vec = _embed_text(flower["document"], glove)
-        if vec is None:
-            # zero vector for flowers with no GloVe coverage — will score 0
-            # against any query vector which is harmless
-            vec = np.zeros(GLOVE_DIM, dtype=np.float32)
-        rows.append(vec)
- 
-    return np.stack(rows, axis=0).astype(np.float32)
- 
- 
-def _glove_similarities(
-    query: str,
-    glove: dict[str, np.ndarray],
-    glove_matrix: np.ndarray | None,
-) -> np.ndarray | None:
-    """
-    Compute cosine similarities between the query embedding and every flower
-    embedding.  Returns None when GloVe is unavailable so the caller can skip
-    the blending step and use the SVD scores as-is.
-    """
-    if glove_matrix is None or not glove:
-        return None
- 
-    query_vec = _embed_text(query, glove)
-    if query_vec is None:
-        return None
- 
-    # glove_matrix rows are already L2-normalised, query_vec is normalised too
-    # so the dot product equals cosine similarity
-    return glove_matrix.dot(query_vec).astype(np.float32)
-
- 
-# ============================================================================
-# END GloVe helpers
-# ============================================================================
-
 
 
 def _canonicalize_query_terms(query: str) -> str:
@@ -629,7 +529,6 @@ def _locked_facet_categories(query: str, query_keywords: list[dict]) -> set[str]
 def _build_facet_index(
     flowers: list[dict],
     word_vectorizer: TfidfVectorizer,
-    char_vectorizer: TfidfVectorizer,
     svd: TruncatedSVD | None,
 ) -> tuple[list[dict], np.ndarray | None, np.ndarray | None]:
     if svd is None:
@@ -658,7 +557,6 @@ def _build_facet_index(
         value = facet_values[key]
         facet_document = _build_facet_document(category, value, supporting_flowers)
         facet_word_matrix = word_vectorizer.transform([facet_document])
-        facet_combined_matrix = hstack([facet_word_matrix, char_vectorizer.transform([facet_document])], format="csr")
         if facet_word_matrix.nnz == 0:
             continue
 
@@ -676,8 +574,7 @@ def _build_facet_index(
         return [], None, None
 
     facet_word_matrix = word_vectorizer.transform(facet_documents)
-    facet_combined_matrix = hstack([facet_word_matrix, char_vectorizer.transform(facet_documents)], format="csr")
-    facet_lsa = normalize(svd.transform(facet_combined_matrix), norm="l2")
+    facet_lsa = normalize(svd.transform(facet_word_matrix), norm="l2")
     return facet_entries, facet_word_matrix, facet_lsa
 
 
@@ -947,15 +844,9 @@ def _load_model() -> tuple:
 
     word_matrix = word_vectorizer.fit_transform(documents)
     char_matrix = char_vectorizer.fit_transform(documents)
-    # after
-    combined_matrix = hstack([word_matrix, char_matrix], format="csr")
-    svd, lsa_matrix = _fit_lsa(combined_matrix)
-    facet_entries, facet_word_matrix, facet_lsa = _build_facet_index(flowers, word_vectorizer, char_vectorizer, svd)
+    svd, lsa_matrix = _fit_lsa(word_matrix)
+    facet_entries, facet_word_matrix, facet_lsa = _build_facet_index(flowers, word_vectorizer, svd)
     component_labels = p3._component_labels_from_svd(svd, word_vectorizer, flowers)
-    
-    #the glove stuff
-    glove        = _load_glove()
-    glove_matrix = _build_glove_matrix(flowers, glove)
 
     return (
         flowers,
@@ -969,13 +860,11 @@ def _load_model() -> tuple:
         facet_entries,
         facet_word_matrix,
         facet_lsa,
-        glove, 
-        glove_matrix,
     )
 
 
 def model_info() -> dict:
-    flowers, word_vectorizer, char_vectorizer, _, feature_count, svd, _, _, facet_entries, _, _, _, _ = _load_model()
+    flowers, word_vectorizer, char_vectorizer, _, feature_count, svd, _, _, facet_entries, _, _ = _load_model()
     return {
         "retrieval_mode": "semantic_csv_svd",
         "document_count": len(flowers),
@@ -1001,8 +890,6 @@ def semantic_diagnostics(queries: tuple[str, ...] = SEMANTIC_BENCHMARK_QUERIES) 
         facet_entries,
         facet_word_matrix,
         facet_lsa,
-        _,
-        _,
     ) = _load_model()
     if svd is None or lsa_matrix is None:
         return {
@@ -1092,16 +979,13 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
         facet_entries,
         facet_word_matrix,
         facet_lsa,
-        glove,
-        glove_matrix,
     ) = _load_model()
     raw_query_word_matrix = word_vectorizer.transform([keyword_query])
-    raw_query_combined_matrix = hstack([raw_query_word_matrix, char_vectorizer.transform([keyword_query])], format="csr")
 
-    if (raw_query_word_matrix.nnz == 0 and raw_query_combined_matrix.nnz == 0) or svd is None or lsa_matrix is None:
+    if raw_query_word_matrix.nnz == 0 or svd is None or lsa_matrix is None:
         return _empty_response(query)
 
-    raw_query_lsa = normalize(svd.transform(raw_query_combined_matrix), norm="l2")
+    raw_query_lsa = normalize(svd.transform(raw_query_word_matrix), norm="l2")
     base_query_keywords = p3._build_query_breakdown_keywords(
         retrieval_query,
         raw_query_word_matrix,
@@ -1125,31 +1009,19 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     facet_keywords = _filter_structural_query_keywords(facet_keywords)
     facet_keywords = _apply_maintenance_preference_to_keywords(facet_keywords, maintenance_preference)
     semantic_query_text, query_keywords = _build_semantic_query_text(keyword_query, base_query_keywords, facet_keywords)
-   
+    query_keywords = _apply_maintenance_preference_to_keywords(query_keywords, maintenance_preference)
     query_word_matrix = word_vectorizer.transform([semantic_query_text])
-    query_char_matrix = char_vectorizer.transform([semantic_query_text])
-    query_combined_matrix = hstack([query_word_matrix, query_char_matrix], format="csr")
 
-    if query_word_matrix.nnz == 0 and query_char_matrix.nnz == 0:
+    if query_word_matrix.nnz == 0:
         return _empty_response(query, query_keywords)
 
-    query_lsa = normalize(svd.transform(query_combined_matrix), norm="l2")
+    query_lsa = normalize(svd.transform(query_word_matrix), norm="l2")
     semantic_similarities = np.maximum(cosine_similarity(query_lsa, lsa_matrix)[0], 0.0)
     direct_word_similarities = np.maximum(cosine_similarity(query_word_matrix, word_matrix)[0], 0.0)
-
-    svd_display_similarities = (
+    display_similarities = (
         SEMANTIC_SIMILARITY_WEIGHT * semantic_similarities
         + LEXICAL_STABILITY_WEIGHT * direct_word_similarities
     )
-    glove_sims = _glove_similarities(query, glove, glove_matrix)
-    if glove_sims is not None:
-        display_similarities = (
-            (1.0 - GLOVE_WEIGHT) * svd_display_similarities
-            + GLOVE_WEIGHT * glove_sims
-        )
-    else:
-        display_similarities = svd_display_similarities
-        
     similarities = np.asarray(
         [
             float(display_similarities[index])
@@ -1174,37 +1046,36 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
     query_radar_chart = None
     query_axis_indices = np.asarray([], dtype=int)
     query_axis_labels: list[str] = []
- 
     if query_axes is not None:
         query_axis_indices = query_axes["axis_indices"]
         query_axis_labels = p3._relabel_query_axes(
-           
             query_axis_indices,
             query_axes["axis_labels"],
             query_keywords,
             svd,
             word_vectorizer,
         )
-
         query_axis_positions = _query_backed_axis_positions(query_axis_labels, query_keywords)
         if len(query_axis_positions) >= 3:
             query_axis_indices = query_axis_indices[query_axis_positions]
             query_axis_labels = [query_axis_labels[position] for position in query_axis_positions]
-
-        query_axis_display_values = p3._query_axis_display_values(
-            query_lsa[0],
-            query_axis_indices,
-            query_axis_labels,
-            query_keywords,
-        )
-        query_radar_chart = build_latent_radar_chart(
-            query_lsa[0],
-            component_labels,
-            profile_kind="query",
-            axis_indices=query_axis_indices,
-            axis_labels=query_axis_labels,
-            axis_values=query_axis_display_values,
-        )
+            query_axis_display_values = p3._query_axis_display_values(
+                query_lsa[0],
+                query_axis_indices,
+                query_axis_labels,
+                query_keywords,
+            )
+            query_radar_chart = build_latent_radar_chart(
+                query_lsa[0],
+                component_labels,
+                profile_kind="query",
+                axis_indices=query_axis_indices,
+                axis_labels=query_axis_labels,
+                axis_values=query_axis_display_values,
+            )
+        else:
+            query_axis_indices = np.asarray([], dtype=int)
+            query_axis_labels = []
 
     suggestions = []
     for index in ranked_indices:
@@ -1242,8 +1113,7 @@ def recommend_flowers(query: str, limit: int = 5) -> dict:
 
 
 def visualizer_flowers(limit: int = 48) -> dict:
-    flowers, _, _, _, _, _, lsa_matrix, component_labels, _, _, _, _, _ = _load_model()
-
+    flowers, _, _, _, _, _, lsa_matrix, component_labels, _, _, _ = _load_model()
     if lsa_matrix is None or len(flowers) == 0:
         return {"flowers": []}
 
@@ -1293,7 +1163,7 @@ def visualizer_flowers(limit: int = 48) -> dict:
 
 
 def get_flower_vectors(scientific_names: list[str]) -> dict:
-    flowers, _, _, _, _, _, lsa_matrix, _, _, _, _, _, _ = _load_model()
+    flowers, _, _, _, _, _, lsa_matrix, _, _, _, _ = _load_model()
     sci_to_index = {
         p3._normalize(f["scientific_name"]): i
         for i, f in enumerate(flowers)

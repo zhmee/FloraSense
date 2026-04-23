@@ -2241,7 +2241,7 @@ def visualizer_flowers(limit: int = 48) -> dict:
     Return a lightweight flower graph dataset for the 3D visualizer.
     Uses the learned SVD latent vectors for base positions.
     """
-    flowers, _, _, _, _, _, lsa_matrix, component_labels = _load_model()
+    flowers, _, _, _, _, _, lsa_matrix, component_labels, _, _ = _load_model()
     if lsa_matrix is None or len(flowers) == 0:
         return {"flowers": []}
 
@@ -2381,7 +2381,8 @@ def get_flower_vectors(scientific_names: list[str]) -> dict:
     Public interface for other modules that need flower data.
     Returns everything update_bouquet needs without exposing internals.
     """
-    flowers, _, _, _, _, _, lsa_matrix, _ = _load_model()
+
+    flowers, _, _, _, _, _, lsa_matrix, component_labels, _, _ = _load_model()
     
     sci_to_index = {
         _normalize(f["scientific_name"]): i
