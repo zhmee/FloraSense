@@ -439,13 +439,17 @@
 
 .query-rail {
   position: sticky;
-  top: calc(var(--fs-nav-clearance, 10));
+  top: calc(var(--fs-nav-clearance, 10px));
   align-self: start;
-  padding: clamp(20px, 2.4vw, 28px);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--fs-nav-clearance, 10px) - 18px);
+  padding: clamp(16px, 2vw, 20px);
   border: 1px solid rgba(104, 84, 56, 0.1);
-  border-radius: 28px;
+  border-radius: 22px;
   background: rgba(255, 250, 242, 0.64);
   box-shadow: 0 18px 34px rgba(80, 60, 33, 0.05);
+  overflow: hidden;
 }
 
 .rail-heading,
@@ -505,7 +509,8 @@
 }
 
 .query-radar-panel {
-  margin: 14px 0 0;
+  margin: 10px 0 0;
+  flex: 0 0 auto;
 }
 
 .latent-radar-panel {
@@ -546,17 +551,25 @@
   height: auto;
 }
 
+.query-radar-panel img {
+  max-height: 210px;
+  object-fit: contain;
+}
+
 
 .keyword-chip-list {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 7px;
+  margin-top: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 3px;
 }
 
 .match-chip.match-chip--rail {
   display: grid;
-  gap: 8px;
-  padding: 12px 13px;
+  gap: 5px;
+  padding: 8px 10px;
   white-space: normal;
   max-width: 100%;
   border-radius: 8px;
@@ -590,7 +603,7 @@
   flex: 1 1 auto;
   min-width: 0;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 800;
   line-height: 1.2;
   text-transform: capitalize;
@@ -601,11 +614,11 @@
   display: inline-flex;
   align-items: center;
   margin-left: 0;
-  padding: 2px 7px 3px;
+  padding: 2px 6px 3px;
   border-radius: 999px;
   background: rgba(103, 115, 84, 0.11);
   color: var(--olive);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -618,11 +631,15 @@
 
 .match-chip.match-chip--rail p {
   margin: 0;
-  padding-top: 8px;
+  padding-top: 5px;
   border-top: 1px solid rgba(104, 84, 56, 0.1);
   color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.38;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 
@@ -1536,6 +1553,8 @@
   .query-rail {
     position: static;
     top: auto;
+    max-height: none;
+    overflow: visible;
   }
 }
 
