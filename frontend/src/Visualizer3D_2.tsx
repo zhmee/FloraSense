@@ -3,11 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatFlowerDisplayName } from './flowerDisplay'
 import type { BouquetInsightsResponse, VisualizerFlower, VisualizerFlowersResponse } from './types'
 import './Visualizer3D.css'
-import './App.css'
-import FlowerCoral from './assets/flower-coral.svg'
-import FlowerGold from './assets/flower-gold.svg'
-import FlowerOlive from './assets/flower-olive.svg'
-import FlowerRose from './assets/flower-rose.svg'
+
 const TAU = Math.PI * 2
 const MAX_NEIGHBORS_PER_FLOWER = 2
 const CAMERA_FOV = 980
@@ -344,6 +340,7 @@ function paintFieldBackdrop(
   void ctx
   void camera
 }
+
 function projectNode(node: FlowerNode, camera: ProjectionCamera, y: number = node.pos.y): ProjectedNode {
   const projected = projectWorldPoint({ x: node.pos.x, y, z: node.worldZ }, camera)
   return {
@@ -651,19 +648,7 @@ function removeFlowerFromBouquet(prev: string[], flowerId: string): string[] {
   return prev.filter(id => id !== flowerId)
 }
 
-//BIG FLOWER
-const VIZ_DECORATIVE_FLOWERS = [
-  { top: '5%',  left: '2%',   size: 140, depth: 1.3,  image: FlowerCoral },
-  { top: '18%', right: '4%',  size: 110, depth: 0.95, image: FlowerGold  },
-  { top: '35%', left: '0%',   size: 100, depth: 1.1,  image: FlowerOlive },
-  { top: '50%', right: '2%',  size: 130, depth: 1.4,  image: FlowerRose  },
-  { top: '65%', left: '5%',   size: 115, depth: 1.2,  image: FlowerCoral },
-  { top: '78%', right: '8%',  size: 105, depth: 1.05, image: FlowerGold  },
-  { top: '88%', left: '12%',  size: 95,  depth: 0.9,  image: FlowerOlive },
-  { top: '10%', left: '16%',  size: 78,  depth: 0.85, image: FlowerRose  },
-  { top: '42%', right: '16%', size: 82,  depth: 0.88, image: FlowerCoral },
-  { top: '72%', right: '20%', size: 76,  depth: 0.87, image: FlowerGold  },
-]
+
 
 // ─── 2D Layout ────────────────────────────────────────────────────────────────
 
@@ -1301,47 +1286,11 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
     }
   }, [isActive, bouquets, flowers, semanticGraph, recompute, centerViewport, focusSelectedFlower, focusSelectedNeighborhood, onFlowerSelect, onBouquetSelect, onSceneStatusChange, setOverviewViewport])
 
-return (
-  <div ref={containerRef} className="viz-canvas__mount" style={{ position: 'absolute', inset: 0 }}>
-    {/* Decorative backdrop flowers — same pattern as App.tsx garden-backdrop */}
-<div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>      {[
-
-
-  { top: '-90%',  left: '8%',   size: 900, src: FlowerCoral, opacity: 0.30 },
-  { top: '30%',  left: '50%',  size: 900, src: FlowerGold,  opacity: 0.27 },
-  { top: '40%',  right: '60%', size: 900, src: FlowerOlive, opacity: 0.29 },
-      ].map((f, i) => (
-        <img
-          key={i}
-          src={f.src}
-          alt=""
-          style={{
-            position: 'absolute',
-            top: f.top,
-            left: 'left' in f ? f.left : undefined,
-            right: 'right' in f ? f.right : undefined,
-            width: f.size,
-            height: f.size,
-            opacity: f.opacity,
-            userSelect: 'none',
-          }}
-        />
-      ))}
+  return (
+    <div ref={containerRef} className="viz-canvas__mount" style={{ position: 'absolute', inset: 0 }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab' }} />
     </div>
-    <canvas
-  ref={canvasRef}
-  style={{
-    position: 'absolute',
-    inset: 0,
-    zIndex: 1,
-    display: 'block',
-    width: '100%',
-    height: '100%',
-    cursor: 'grab',
-  }}
-/>
-  </div>
-)
+  )
 })
 
 function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
@@ -1366,62 +1315,8 @@ const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
 const [bouquetTrayOpen] = useState(false)
 const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
 const [myBouquetInsightsStatus, setMyBouquetInsightsStatus] = useState<InsightsStatus>('idle')
-const [introDismissed, setIntroDismissed] = useState(false)
+
   // ── BOUQUE PORTION END  ────────────────────────────────────────────────────
-
-
-  //BIG FLOWER!!
-  const vizShellRef = useRef<HTMLDivElement | null>(null)
-
-useEffect(() => {
-  if (!isActive) return
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-
-  const shell = vizShellRef.current
-  if (!shell) return
-
-  const flowers = Array.from(shell.querySelectorAll<HTMLElement>('.viz-bg-flower'))
-  if (!flowers.length) return
-
-  let pointerX = window.innerWidth * 0.5
-  let pointerY = window.innerHeight * 0.5
-  let frameId = 0
-  const offsets = flowers.map(() => ({ x: 0, y: 0 }))
-
-  const render = () => {
-    flowers.forEach((flower, i) => {
-      const rect = flower.getBoundingClientRect()
-      const cx = rect.left + rect.width / 2
-      const cy = rect.top + rect.height / 2
-      const dx = cx - pointerX
-      const dy = cy - pointerY
-      const dist = Math.hypot(dx, dy) || 1
-      const radius = rect.width * 0.95 + 90
-      const strength = Math.max(0, 1 - dist / radius)
-      const depth = Number(flower.dataset.depth ?? '1')
-      const tx = strength > 0 ? (dx / dist) * strength * 42 * depth : 0
-      const ty = strength > 0 ? (dy / dist) * strength * 34 * depth : 0
-      offsets[i].x += (tx - offsets[i].x) * 0.16
-      offsets[i].y += (ty - offsets[i].y) * 0.16
-      flower.style.transform = `translate3d(${offsets[i].x}px, ${offsets[i].y}px, 0)`
-    })
-    frameId = requestAnimationFrame(render)
-  }
-
-  const onMove = (e: PointerEvent) => { pointerX = e.clientX; pointerY = e.clientY }
-  const onLeave = () => { pointerX = -1000; pointerY = -1000 }
-
-  frameId = requestAnimationFrame(render)
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerleave', onLeave)
-
-  return () => {
-    cancelAnimationFrame(frameId)
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerleave', onLeave)
-  }
-}, [isActive])
-//BIG FLOWERS END
 
   useEffect(() => {
     if (!isActive || flowers.length > 0) return
@@ -1682,146 +1577,17 @@ useEffect(() => {
       animations.forEach(animation => animation.revert())
     }
   }, [atlasRecommendations, bouquetInsightsStatus, flowers.length, isActive])
-return (
+
+  return (
     <section ref={shellRef} className="viz-shell">
-      <div ref={vizShellRef} className="viz-garden-backdrop" aria-hidden="true">
-        {VIZ_DECORATIVE_FLOWERS.map((f, i) => (
-          <div
-            key={i}
-            className="viz-bg-flower"
-            data-depth={f.depth}
-            style={{
-              position: 'absolute',
-              top: f.top,
-              left: 'left' in f ? f.left : undefined,
-              right: 'right' in f ? f.right : undefined,
-              width: f.size,
-              height: f.size,
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          >
-            <img src={f.image} alt="" style={{ width: '100%', height: '100%', opacity: 1 }} />
-          </div>
-        ))}
-      </div>
-
-      {!introDismissed && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 50,
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          background: `
-            radial-gradient(circle at 18% 22%, rgba(207, 139, 116, 0.15), transparent 32%),
-            radial-gradient(circle at 82% 14%, rgba(228, 188, 103, 0.15), transparent 28%),
-            radial-gradient(circle at 50% 80%, rgba(115, 133, 109, 0.12), transparent 30%),
-            linear-gradient(160deg, #fbf8f2 0%, #f4efe7 50%, #efe6d8 100%)
-          `,
-        }}>
-          {/* blush orb */}
-          <div style={{
-            position: 'absolute', top: '-60px', left: '-60px',
-            width: 320, height: 320, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(207,139,116,0.16), transparent 70%)',
-            filter: 'blur(22px)', pointerEvents: 'none',
-          }} />
-          {/* gold orb */}
-          <div style={{
-            position: 'absolute', top: '30px', right: '-40px',
-            width: 260, height: 260, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(228,188,103,0.16), transparent 70%)',
-            filter: 'blur(18px)', pointerEvents: 'none',
-          }} />
-          {/* sage orb */}
-          <div style={{
-            position: 'absolute', bottom: '-40px', left: '38%',
-            width: 280, height: 280, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(115,133,109,0.14), transparent 70%)',
-            filter: 'blur(20px)', pointerEvents: 'none',
-          }} />
-
-          {/* decorative flowers — same level as orbs, behind card */}
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1}} aria-hidden="true">
-            {VIZ_DECORATIVE_FLOWERS.map((f, i) => (
-              <div
-                key={i}
-                className="viz-bg-flower"
-                data-depth={f.depth}
-                style={{
-                  position: 'absolute',
-                  top: f.top,
-                  left: 'left' in f ? f.left : undefined,
-                  right: 'right' in f ? f.right : undefined,
-                  width: f.size,
-                  height: f.size,
-                  pointerEvents: 'none',
-                }}
-              >
-                <img src={f.image} alt="" style={{ width: '100%', height: '100%', opacity: 0.35 }} />
-              </div>
-            ))}
-          </div>
-
-          {/* card */}
-          <div style={{
-            position: 'relative',
-            zIndex: 2,
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: 20, textAlign: 'center',
-            padding: '48px 56px',
-            borderRadius: '30px 24px 34px 22px',
-            border: '1px solid rgba(108, 86, 62, 0.12)',
-            background: 'linear-gradient(180deg, rgba(255, 252, 248, 0.94), rgba(247, 239, 229, 0.86))',
-            boxShadow: '0 28px 72px rgba(79, 60, 42, 0.13), inset 0 1px 0 rgba(255,255,255,0.52)',
-            backdropFilter: 'blur(22px)',
-            maxWidth: 900,
-          }}>
-            {/* inner orb */}
-            <div style={{
-              position: 'absolute', top: -20, left: -20,
-              width: 140, height: 140, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(228,188,103,0.16), transparent 72%)',
-              filter: 'blur(6px)', pointerEvents: 'none',
-            }} />
-
-            <p style={{
-              margin: 0,
-              fontSize: '0.82rem', letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              color: 'var(--viz-accent)', fontWeight: 700,
-            }}>
-              FloraSense 3D Visualizer
-            </p>
-
-            <h2 style={{
-              margin: 0,
-              fontSize: 'clamp(1.6rem, 3vw, 2.4rem)',
-              fontFamily: '"Iowan Old Style", "Palatino Linotype", Georgia, serif',
-              letterSpacing: '-0.03em', lineHeight: 1.1,
-              color: 'var(--viz-ink)',
-            }}>
-              Ready to build your<br />own bouquet?
-            </h2>
-
-            <p style={{
-              margin: 0,
-              fontSize: '1rem', lineHeight: 1.7,
-              color: 'var(--viz-muted)', maxWidth: 340,
-            }}>
-              Explore flower meanings and create your own bouquet to convey everything you intend
-            </p>
-
-            <button
-              onClick={() => setIntroDismissed(true)}
-              className="viz-hud__action"
-              style={{ marginTop: 8, padding: '0 32px', minHeight: 48, fontSize: '1rem', fontWeight: 700 }}
-            >
-              Click to start 🌸
-            </button>
-          </div>
-        </div>
-      )}
- 
+      <header className="viz-header">
+        <p className="viz-eyebrow">FloraSense 3D Visualizer</p>
+        <h2 className="viz-title">Navigate a Linked Flower Field</h2>
+        <p className="viz-subtitle">
+          Every flower sits directly in the latent space instead of being packed into bouquet clusters.
+          Move through the field with pan and zoom, then click any flower to surface its strongest semantic links, health profile, and recommendations.
+        </p>
+      </header>
 
       <div className={`viz-stage${showSidebar ? ' viz-stage--focused' : ''}`}>
         <div className="viz-canvas">
