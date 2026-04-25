@@ -316,7 +316,7 @@ def _meaning_value_supports_query_term(term: str, value: str) -> bool:
         return False
     return normalized_term == normalized_value or normalized_term in normalized_value or normalized_value in normalized_term
 
-def _llm_retrieval_query(client, user_query: str) -> tuple[str, str, str]:
+def _llm_retrieval_query(client, user_query: str) -> tuple[str, list[str], str, str]:
     messages = [
         {
             "role": "system",
@@ -328,12 +328,22 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, str, str]:
                 "rebirth, strength, courage, low maintenance, or high maintenance. "
                 "Remove filler words such as really, very, actually, basically, just, maybe, "
                 "kind of, sort of, I, me, want, need, something, and please. "
-                "Resolve negations into positive search terms: don't want hard flowers, "
-                "not high maintenance, or don't need much care should become low maintenance flowers; "
-                "don't want easy care or not low maintenance should become high maintenance flowers. "
-                "Never include negation words like not, don't, dont, or don in the retrieval_query. "
+
+                "NEGATION RULE: "
+                "If the user negates any attribute (color, flower name, occasion, trait): "
+                "  - OMIT that attribute from retrieval_query entirely. "
+                "  - Add it to the exclude_terms list as a lowercase string. "
+                "  - Only include attributes the user explicitly wants. "
+                "If the user negates a trait with a clear opposite (e.g. 'not high maintenance'): "
+                "  - Replace it with its opposite in retrieval_query (e.g. 'low maintenance'). "
+                "  - Do NOT add it to exclude_terms in that case. "
+                "Never include negation words (not, no, don't, without) in retrieval_query. "
+
+                "Do not infer symbolic meaning from color constraints alone. "
                 "Do not answer the user. Return JSON only: "
-                "{\"retrieval_query\":\"short search phrase\", \"rationale\":\"brief reason\"}."
+                "{\"retrieval_query\":\"short search phrase\","
+                "\"exclude_terms\":[\"negated attributes as lowercase strings, or empty array\"],"
+                "\"rationale\":\"brief reason\"}."
             ),
         },
         {
@@ -341,9 +351,11 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, str, str]:
             "content": (
                 "Examples:\n"
                 "User: I need flowers to say thanks to my teacher\n"
-                "JSON: {\"retrieval_query\":\"gratitude teacher flowers\",\"rationale\":\"thanks maps to gratitude\"}\n"
+                "JSON: {\"retrieval_query\":\"gratitude teacher flowers\",\"exclude_terms\":[],\"rationale\":\"thanks maps to gratitude\"}\n"
                 "User: something romantic but not too hard to take care of\n"
-                "JSON: {\"retrieval_query\":\"love low maintenance flowers\",\"rationale\":\"romantic maps to love and easy care maps to low maintenance\"}\n\n"
+                "JSON: {\"retrieval_query\":\"love low maintenance flowers\",\"exclude_terms\":[],\"rationale\":\"not high maintenance flipped to low maintenance\"}\n"
+                "User: I want flowers but not yellow and not roses\n"
+                "JSON: {\"retrieval_query\":\"flowers\",\"exclude_terms\":[\"yellow\",\"rose\"],\"rationale\":\"yellow and rose excluded per user request\"}\n\n"
                 f"User: {user_query}"
             ),
         },
@@ -353,18 +365,49 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, str, str]:
         content = _llm_text_response(client, messages)
     except Exception:
         logger.exception("LLM query transformation failed.")
-        return user_query, "LLM query transformation failed; using the original query.", "local"
+        return user_query, [], "LLM query transformation failed; using the original query.", "local"
 
     parsed = _extract_json_object(content)
     retrieval_query = str(parsed.get("retrieval_query") or "").strip()
     rationale = str(parsed.get("rationale") or "").strip()
+    exclude_terms = [str(t).lower().strip() for t in parsed.get("exclude_terms") or [] if t]
+
     if not retrieval_query:
-        retrieval_query = user_query
-        rationale = "The LLM did not return a valid retrieval query, so the original query was used."
-        return retrieval_query, rationale, "local"
+        return user_query, [], "The LLM did not return a valid retrieval query, so the original query was used.", "local"
 
-    return retrieval_query, rationale, "llm"
+    return retrieval_query, exclude_terms, rationale, "llm"
 
+import re
+
+def _apply_hard_filters(payload: dict, exclude_terms: list[str]) -> dict:
+    if not exclude_terms:
+        return payload
+
+    filtered = []
+    for suggestion in payload.get("suggestions", []):
+        haystack = " ".join(
+            suggestion.get("colors", [])
+            + suggestion.get("meanings", [])
+            + suggestion.get("occasions", [])
+            + suggestion.get("plant_types", [])
+            + suggestion.get("maintenance", [])
+            + [suggestion.get("name", "")]
+        ).lower()
+
+        excluded = any(
+            re.search(rf"\b{re.escape(term)}\b", haystack)
+            for term in exclude_terms
+        )
+        if excluded:
+            continue
+        filtered.append(suggestion)
+
+    if not filtered:
+        logger.warning(f"Initial suggestions: {len(payload.get('suggestions', []))}")
+        return payload
+
+    payload["suggestions"] = filtered
+    return payload
 
 def _compact_context_values(values, limit: int = 3) -> list[str]:
     if not isinstance(values, list):
@@ -798,10 +841,11 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     client, unavailable_reason = _llm_client()
     if client is None:
         retrieval_query = query
+        exclude_terms = []
         transform_rationale = f"{unavailable_reason} Using the original query because AI query rewriting is unavailable."
         transform_source = "local"
     else:
-        retrieval_query, transform_rationale, transform_source = _llm_retrieval_query(client, query)
+        retrieval_query, exclude_terms, transform_rationale, transform_source = _llm_retrieval_query(client, query)
 
     payload = _recommend_with_fallback(
         retrieval_query,
@@ -809,6 +853,18 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
         method,
         use_llm_explanations=False,
     )
+   
+
+    payload = _apply_hard_filters(payload, exclude_terms)
+
+  
+    if len(payload.get("suggestions", [])) < limit:
+        logger.warning("Too few results after filtering, refilling...")
+        modules = _load_search_modules()
+        fallback = modules["recommend_flowers_tfidf"](retrieval_query, limit=limit)
+        payload["suggestions"] = fallback.get("suggestions", [])
+
+    payload["query"] = query
     payload["query"] = query
     context_documents = _build_rag_context_documents(payload, limit=limit)
 
@@ -817,7 +873,7 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     answer_source = "llm"
     card_summary_source = "llm"
     if client is not None:
-        time.sleep(1.0)
+        #time.sleep(1.0)
         answer, card_summaries = _generate_rag_response(
             client,
             query,
