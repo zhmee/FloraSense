@@ -759,30 +759,30 @@ def _generate_rag_response(
                 "a graceful sentence about when the flower is suitable. If a record says it has "
                 "occasion evidence, rag_occasion_summary must not be empty; return an empty "
                 "string only when the record has no occasion evidence. "
-                "For every card ir_summary, summarize the retreived data with grammar improvements, "
-                "so that it is more grammatically correct and easier to read. Keep most of the words from "
-                "the original data source intact. ONLY polish it grammatically"
+                "For every card ir_summary, QUICKLY summarize the retreived data with grammar improvements, "
+                "so that it is more grammatically correct and easier to read. ONLY polish it grammatically, do "
+                "not add new words not in the data. Keep at most 4 sentences"
                 "Never mention RAG, IR,"
                 "vectors, retrieval, database, matched keywords, score, or context. "
                 "Return JSON only with this exact shape: "
                 "{\"answer\":\"2 to 3 sentence overall answer\", "
                 "\"cards\":[{\"rank\":1,\"name\":\"exact Flower name\","
                 "\"scientific_name\":\"exact scientific name\","
-                "\"ir_summary\":\"1 to 2 concise evidence sentences for the raw card\","
+                "\"ir_summary\":\" at most 4 concise evidence sentences for the raw card\","
                 "\"rag_summary\":\"2 to 3 sentences grounded in the retrieved record\","
                 "\"rag_occasion_summary\":\"one sentence about occasion fit or empty string\"}]}. "
-                "The answer should be 2 to 3 graceful sentences, around 55 to 95 words total. "
+                "The answer should be 2 to 3 graceful sentences, around 55 to 70 words total. "
                 "The cards array must contain exactly one entry for every retrieved flower record, "
                 "in the same order, using the exact rank, name, and scientific name shown. "
                 "Do not skip duplicated or similar-looking records; each retrieved record needs "
                 "its own ir_summary, rag_summary, and rag_occasion_summary. "
-                "Each ir_summary must be around 5 useful sentences and must "
+                "Each ir_summary must be around 4 useful sentences and must "
                 "not copy the rag_summary. It must use directly the data for that particular flower, "
                 "and just rewrite in a more user friendly readable way."
-                "Each rag_summary must be 2 to 3 useful sentences, 45 to 80 words total, and "
+                "Each rag_summary must be 2 to 3 useful sentences, 45 to 60 words total, and "
                 "should explain the fit using evidence that matters for the original user query."
                 "Include WHY it was chosen. Each "
-                "rag_occasion_summary must be one useful sentence, 14 to 30 words, focused only "
+                "rag_occasion_summary must be one useful sentence, 14 to 20 words, focused ONLY "
                 "on occasion evidence."
             ),
         },
@@ -837,16 +837,16 @@ def _generate_rag_response(
 
     return answer, card_summaries
 
+@lru_cache(maxsize=256)
+def _cached_retrieval_query(query: str):
+    client, reason = _llm_client()
+    if client is None:
+        return query, [], reason, "local"
+    return _llm_retrieval_query(client, query)
 
 def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     client, unavailable_reason = _llm_client()
-    if client is None:
-        retrieval_query = query
-        exclude_terms = []
-        transform_rationale = f"{unavailable_reason} Using the original query because AI query rewriting is unavailable."
-        transform_source = "local"
-    else:
-        retrieval_query, exclude_terms, transform_rationale, transform_source = _llm_retrieval_query(client, query)
+    retrieval_query, exclude_terms, transform_rationale, transform_source = _cached_retrieval_query(query)
 
     payload = _recommend_with_fallback(
         retrieval_query,
@@ -919,6 +919,7 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
             if card_summary_source == "llm"
             else occasion_summary or suggestion.get("query_fit_occasion_summary", "")
         )
+        suggestion["ir_occasion_summary"] = occasion_summary  
         suggestion["rag_source"] = card_summary_source if summary else "local"
         suggestion["rag_occasion_source"] = (
             card_summary_source

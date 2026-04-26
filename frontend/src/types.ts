@@ -25,6 +25,7 @@ export interface FlowerSuggestion {
   query_fit_occasion_summary?: string
   ir_summary?: string
   ir_summary_source?: 'llm' | 'local' | ''
+  ir_occasion_summary?: string
   rag_summary?: string
   rag_occasion_summary?: string
   rag_source?: 'llm' | 'local' | ''

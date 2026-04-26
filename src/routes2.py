@@ -17,6 +17,8 @@ from pathlib import Path
 from flask import send_from_directory, request, jsonify
 from utils import FLOWER_IMAGE_DIR
 from models import db, Episode, Review
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = True
@@ -974,94 +976,67 @@ def _generate_rag_cards_only(client, user_query, retrieval_query, context_docume
 
     return card_summaries
 
-def _rag_recommendations(query: str, limit: int, method: str, phase: str = "full") -> dict:
-    client, unavailable_reason = _llm_client()
+@lru_cache(maxsize=256)
+def _cached_retrieval_query(query: str):
+    client, reason = _llm_client()
     if client is None:
-        retrieval_query = query
-        exclude_terms = []
-        transform_rationale = f"{unavailable_reason} Using original query."
-        transform_source = "local"
-    else:
-        retrieval_query, exclude_terms, transform_rationale, transform_source = _llm_retrieval_query(client, query)
+        return query, [], reason, "local"
+    return _llm_retrieval_query(client, query)
 
-    payload = _recommend_with_fallback(retrieval_query, limit, method, use_llm_explanations=False)
+def _rag_recommendations(query: str, limit: int, method: str, phase: str = "full") -> dict:
+    retrieval_query, exclude_terms, transform_rationale, transform_source = _cached_retrieval_query(query)
+
+    payload = _recommend_with_fallback(retrieval_query, limit * 2, method, use_llm_explanations=False)
     payload = _apply_hard_filters(payload, exclude_terms)
-
-    if len(payload.get("suggestions", [])) < limit:
-        modules = _load_search_modules()
-        fallback = modules["recommend_flowers_tfidf"](retrieval_query, limit=limit)
-        payload["suggestions"] = fallback.get("suggestions", [])
-
+    payload["suggestions"] = payload["suggestions"][:limit]  # trim instead of re-fetching
     payload["query"] = query
     context_documents = _build_rag_context_documents(payload, limit=limit)
 
-    if phase == "ir":
-        answer = ""
-        card_summaries = {}
-
-        if client is not None:
-            answer = _generate_rag_overview_only(client, query, retrieval_query, context_documents)
-            card_summaries = _generate_rag_cards_only(client, query, retrieval_query, context_documents)
-
-        if not answer:
-            answer = _fallback_rag_answer(query, context_documents)
-        if not card_summaries:
-            card_summaries = _fallback_card_summaries(query, context_documents)
-
-        for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
-            name = suggestion.get("name", "")
-            scientific_name = suggestion.get("scientific_name", "")
-            card_text = (
-                card_summaries.get(f"rank:{suggestion_index}")
-                or card_summaries.get(_rag_name_key(name))
-                or card_summaries.get(f"scientific:{_rag_name_key(scientific_name)}")
-                or {}
-            )
-            data_summary = _local_data_summary({"name": name, "meanings": suggestion.get("meanings", []), "occasions": suggestion.get("occasions", [])})
-            suggestion["ir_summary"] = card_text.get("ir_summary") or data_summary
-            suggestion["ir_summary_source"] = "llm" if card_text.get("ir_summary") else "local"
-            suggestion["rag_summary"] = card_text.get("rag_summary") or ""         
-            suggestion["rag_occasion_summary"] = card_text.get("rag_occasion_summary") or ""  
-            suggestion["rag_source"] = "llm" if card_text.get("rag_summary") else "local"
-            suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
-
-        payload["rag"] = {
-            "user_query": query,
-            "retrieval_query": retrieval_query,
-            "query_transform_source": transform_source,
-            "query_transform_rationale": transform_rationale,
-            "answer": answer,
-            "answer_source": "llm" if answer else "local",
-            "context_documents": context_documents,
-        }
-        return payload
-
-    # phase == "cards" or "full"
+    client, unavailable_reason = _llm_client()
+    answer = ""
     card_summaries = {}
-    card_summary_source = "local"
 
     if client is not None:
-        card_summaries = _generate_rag_cards_only(client, query, retrieval_query, context_documents)
-        card_summary_source = "llm" if card_summaries else "local"
+        if phase == "ir":
+            # Only need overview answer, skip cards
+            answer = _generate_rag_overview_only(client, query, retrieval_query, context_documents)
+        else:
+            # Run overview + cards concurrently — they don't depend on each other!
+            with ThreadPoolExecutor() as ex:
+                overview_future = ex.submit(
+                    _generate_rag_overview_only, client, query, retrieval_query, context_documents
+                )
+                cards_future = ex.submit(
+                    _generate_rag_cards_only, client, query, retrieval_query, context_documents
+                )
+                answer = overview_future.result()
+                card_summaries = cards_future.result()
+
+    if not answer:
+        answer = _fallback_rag_answer(query, context_documents)
     if not card_summaries:
         card_summaries = _fallback_card_summaries(query, context_documents)
-        card_summary_source = "local"
 
-    for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
+    # Attach card text to suggestions
+    for i, suggestion in enumerate(payload.get("suggestions", []), start=1):
         name = suggestion.get("name", "")
         scientific_name = suggestion.get("scientific_name", "")
         card_text = (
-            card_summaries.get(f"rank:{suggestion_index}")
+            card_summaries.get(f"rank:{i}")
             or card_summaries.get(_rag_name_key(name))
             or card_summaries.get(f"scientific:{_rag_name_key(scientific_name)}")
             or {}
         )
-        data_summary = _local_data_summary({"name": name, "meanings": suggestion.get("meanings", []), "occasions": suggestion.get("occasions", [])})
+        data_summary = _local_data_summary({
+            "name": name,
+            "meanings": suggestion.get("meanings", []),
+            "occasions": suggestion.get("occasions", []),
+        })
         suggestion["ir_summary"] = card_text.get("ir_summary") or data_summary
-        suggestion["ir_summary_source"] = card_summary_source if card_text.get("ir_summary") else "local"
+        suggestion["ir_summary_source"] = "llm" if card_text.get("ir_summary") else "local"
         suggestion["rag_summary"] = card_text.get("rag_summary") or data_summary
         suggestion["rag_occasion_summary"] = card_text.get("rag_occasion_summary") or suggestion.get("query_fit_occasion_summary", "")
-        suggestion["rag_source"] = card_summary_source if card_text.get("rag_summary") else "local"
+        suggestion["rag_source"] = "llm" if card_text.get("rag_summary") else "local"
         suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
 
     payload["rag"] = {
@@ -1069,11 +1044,12 @@ def _rag_recommendations(query: str, limit: int, method: str, phase: str = "full
         "retrieval_query": retrieval_query,
         "query_transform_source": transform_source,
         "query_transform_rationale": transform_rationale,
-        "answer": "",
-        "answer_source": "local",
+        "answer": answer,
+        "answer_source": "llm" if answer else "local",
         "context_documents": context_documents,
     }
     return payload
+
 
 
 
@@ -1089,7 +1065,6 @@ def _load_visualizer_insight_modules():
             VISUALIZATION_DIR / "recommendation_calculation",
         ),
     }
-
 
 def register_routes(app):
     @app.route('/', defaults={'path': ''})
@@ -1176,7 +1151,7 @@ def register_routes(app):
         query = request.args.get("q", "")
         modules = _load_search_modules()
         return jsonify(modules["autocomplete_queries"](query))
-    
+
 
     if USE_LLM:
         from llm_routes import register_chat_route

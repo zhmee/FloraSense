@@ -921,9 +921,13 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
                 const irSummary = suggestion.ir_summary?.trim() || queryFitExplanation
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
-                const queryFitOccasionSummary = suggestion.query_fit_occasion_summary?.trim() ?? ''
-                const ragOccasionSummary = suggestion.rag_occasion_summary?.trim() ?? ''
+                const queryFitOccasionSummary = (
+                  suggestion.ir_occasion_summary?.trim() ||
+                  suggestion.query_fit_occasion_summary?.trim() ||
+                  ''
+                )              
                 const frontOccasionText = queryFitOccasionSummary || fullOccasionText
+                const ragOccasionSummary = suggestion.rag_occasion_summary?.trim() ?? ''
                 const hasFrontOccasionText = frontOccasionText !== 'Not listed' && frontOccasionText.length > 0
                 const ragSummary = suggestion.rag_summary?.trim() || queryFitExplanation || 'No RAG summary is available for this result.'
                 const ragCombinedSummary =
@@ -1020,7 +1024,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           </div>
                           {hasFrontOccasionText && (
                             <div className="raw-text-block">
-                              <span>{queryFitOccasionSummary ? 'Possible occasions' : 'Occasions'}</span>
+                              <span>{suggestion.ir_occasion_summary ? 'Occasions' : queryFitOccasionSummary ? 'Possible occasions' : 'Occasions'}</span>
                               <p>{renderHighlightedText(frontOccasionText, highlightTerms)}</p>
                             </div>
                           )}
