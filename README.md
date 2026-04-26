@@ -154,13 +154,6 @@ The system integrates:
 
 ---
 
-## 🛠️ Future Improvements
-
-* Better personalization based on user preferences
-* Improved ranking models
-* Expanded flower dataset
-* Real-time feedback loop for recommendation quality
-
 ## How to run
 ### Windows
 ```bash
