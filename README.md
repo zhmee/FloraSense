@@ -74,13 +74,6 @@ The system integrates:
 
 ### Backend (Flask)
 
-* REST API endpoints for:
-
-  * Search (`/api/recommendations`)
-  * RAG recommendations (`/api/rag-recommendations`)
-  * Autocomplete (`/api/autocomplete`)
-  * Visualization data (`/api/visualizer-flowers`)
-  
 * Modular design with:
 
   * Recommendation engines
