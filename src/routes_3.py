@@ -1,10 +1,9 @@
-
 """
 Routes: React app serving and episode search API.
 
 To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
-#NEW VERSION EXPERIMENTAL
+#OLD VERSION
 import json
 import logging
 import os
@@ -837,212 +836,55 @@ def _generate_rag_response(
         answer = content
 
     return answer, card_summaries
-def _generate_rag_overview_only(client, user_query, retrieval_query, context_documents) -> str:
-    if not context_documents:
-        return _fallback_rag_answer(user_query, context_documents)
-
-    context_markdown = _format_flower_rag_context(context_documents)
-    messages = [
-        {
-            "role": "system",
-            "content": (
-            """
-            You are the final reader in a retrieve-then-read flower recommendation system. 
-            Answer only from the retrieved flower records below. If a retrieved record only 
-            partly supports the user's request, say it is a partial fit instead of forcing a 
-            match. Do not invent meanings, colors, occasions, or care details. 
-
-            Write warm, polished florist-style prose, not a comma-separated inventory. 
-            The answer should compare the strongest flowers: explain what each is especially 
-            good for, and why someone might choose one over another. 
-
-            Never mention RAG, IR, vectors, retrieval, database, matched keywords, score, or context. 
-
-            Return JSON only with this exact shape: 
-            {"answer":"2 to 3 sentence overall answer"}. 
-
-            The answer should be 2 to 3 graceful sentences, around 55 to 95 words total.
-            """
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Original user query:\n{user_query}\n\n"
-                f"LLM-transformed query sent to the flower IR system:\n{retrieval_query}\n\n"
-                f"Retrieved flower records:\n\n{context_markdown}"
-            ),
-        },
-    ]
-    try:
-        content = _llm_text_response(client, messages).strip()
-        parsed = _extract_json_object(content)
-        return str(parsed.get("answer") or "").strip() or content
-    except Exception:
-        logger.exception("LLM overview generation failed.")
-        return _fallback_rag_answer(user_query, context_documents)
 
 
-def _generate_rag_cards_only(client, user_query, retrieval_query, context_documents) -> dict[str, dict[str, str]]:
-    if not context_documents:
-        return {}
-
-    context_markdown = _format_flower_rag_context(context_documents)
-    messages = [
-        {
-            "role": "system",
-            "content": (
-             """
-            You are the final reader in a retrieve-then-read flower recommendation system. 
-            Answer only from the retrieved flower records below. Do not invent meanings, colors, occasions, or care details.
-
-            For every card summary, use the existing 'Why this matches' card text and 
-            occasion fit text as starting evidence, then rewrite both into one deeper 
-            user-facing explanation (rag_summary) grounded in the retrieved record. Include why the flower 
-            matches the query, what evidence supports that match, and how its occasion fit 
-            matters when occasion evidence is present. If the existing text is awkward or 
-            thin, improve it with the listed colors, plant type, maintenance, meanings, 
-            occasions, and matched evidence. Do not copy weak fallback phrases verbatim.
-
-            For every card ir_summary, summarize the retrieved data with grammar improvements 
-            so that it is more grammatically correct and easier to read. Keep most of the words 
-            from the original data source intact. ONLY polish it grammatically.
-
-            For every card occasion summary, rewrite the existing occasion fit text into 
-            a graceful sentence. If a record says it has occasion evidence, rag_occasion_summary 
-            must not be empty; return an empty string only when the record has no occasion evidence.
-
-            Never mention RAG, IR, vectors, retrieval, database, matched keywords, score, or context. 
-
-            Return JSON only with this exact shape: 
-            {
-            "cards":[
-                {
-                "rank": 1,
-                "name": "exact Flower name",
-                "scientific_name": "exact scientific name",
-                "ir_summary": "around 5 useful sentences",
-                "rag_summary": "2 to 3 sentences, 45 to 80 words total",
-                "rag_occasion_summary": "one sentence, 14 to 30 words"
-                }
-            ]
-            }
-
-            The cards array must contain exactly one entry for every retrieved flower record, 
-            in the same order. Each ir_summary must not copy the rag_summary. 
-            Each rag_summary should explain the fit using evidence that matters for the original 
-            user query and include WHY it was chosen.
-            """
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Original user query:\n{user_query}\n\n"
-                f"LLM-transformed query sent to the flower IR system:\n{retrieval_query}\n\n"
-                f"Retrieved flower records:\n\n{context_markdown}"
-            ),
-        },
-    ]
-    try:
-        content = _llm_text_response(client, messages)
-    except Exception:
-        logger.exception("LLM card generation failed.")
-        return {}
-
-    parsed = _extract_json_object(content)
-    card_summaries: dict[str, dict[str, str]] = {}
-    for card in parsed.get("cards") or []:
-        if not isinstance(card, dict):
-            continue
-        rank = card.get("rank")
-        name = str(card.get("name") or "").strip()
-        scientific_name = str(card.get("scientific_name") or "").strip()
-        card_text = {
-            "ir_summary": str(card.get("ir_summary") or "").strip(),
-            "rag_summary": str(card.get("rag_summary") or "").strip(),
-            "rag_occasion_summary": str(card.get("rag_occasion_summary") or "").strip(),
-        }
-        try:
-            card_summaries[f"rank:{int(rank)}"] = card_text
-        except (TypeError, ValueError):
-            pass
-        if name:
-            card_summaries[_rag_name_key(name)] = card_text
-        if scientific_name:
-            card_summaries[f"scientific:{_rag_name_key(scientific_name)}"] = card_text
-
-    return card_summaries
-
-def _rag_recommendations(query: str, limit: int, method: str, phase: str = "full") -> dict:
+def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     client, unavailable_reason = _llm_client()
     if client is None:
         retrieval_query = query
         exclude_terms = []
-        transform_rationale = f"{unavailable_reason} Using original query."
+        transform_rationale = f"{unavailable_reason} Using the original query because AI query rewriting is unavailable."
         transform_source = "local"
     else:
         retrieval_query, exclude_terms, transform_rationale, transform_source = _llm_retrieval_query(client, query)
 
-    payload = _recommend_with_fallback(retrieval_query, limit, method, use_llm_explanations=False)
+    payload = _recommend_with_fallback(
+        retrieval_query,
+        limit,
+        method,
+        use_llm_explanations=False,
+    )
+   
+
     payload = _apply_hard_filters(payload, exclude_terms)
 
+  
     if len(payload.get("suggestions", [])) < limit:
+        logger.warning("Too few results after filtering, refilling...")
         modules = _load_search_modules()
         fallback = modules["recommend_flowers_tfidf"](retrieval_query, limit=limit)
         payload["suggestions"] = fallback.get("suggestions", [])
 
     payload["query"] = query
+    payload["query"] = query
     context_documents = _build_rag_context_documents(payload, limit=limit)
 
-    if phase == "ir":
-        answer = ""
-        card_summaries = {}
-
-        if client is not None:
-            answer = _generate_rag_overview_only(client, query, retrieval_query, context_documents)
-            card_summaries = _generate_rag_cards_only(client, query, retrieval_query, context_documents)
-
-        if not answer:
-            answer = _fallback_rag_answer(query, context_documents)
-        if not card_summaries:
-            card_summaries = _fallback_card_summaries(query, context_documents)
-
-        for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
-            name = suggestion.get("name", "")
-            scientific_name = suggestion.get("scientific_name", "")
-            card_text = (
-                card_summaries.get(f"rank:{suggestion_index}")
-                or card_summaries.get(_rag_name_key(name))
-                or card_summaries.get(f"scientific:{_rag_name_key(scientific_name)}")
-                or {}
-            )
-            data_summary = _local_data_summary({"name": name, "meanings": suggestion.get("meanings", []), "occasions": suggestion.get("occasions", [])})
-            suggestion["ir_summary"] = card_text.get("ir_summary") or data_summary
-            suggestion["ir_summary_source"] = "llm" if card_text.get("ir_summary") else "local"
-            suggestion["rag_summary"] = card_text.get("rag_summary") or ""         
-            suggestion["rag_occasion_summary"] = card_text.get("rag_occasion_summary") or ""  
-            suggestion["rag_source"] = "llm" if card_text.get("rag_summary") else "local"
-            suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
-
-        payload["rag"] = {
-            "user_query": query,
-            "retrieval_query": retrieval_query,
-            "query_transform_source": transform_source,
-            "query_transform_rationale": transform_rationale,
-            "answer": answer,
-            "answer_source": "llm" if answer else "local",
-            "context_documents": context_documents,
-        }
-        return payload
-
-    # phase == "cards" or "full"
+    answer = ""
     card_summaries = {}
-    card_summary_source = "local"
-
+    answer_source = "llm"
+    card_summary_source = "llm"
     if client is not None:
-        card_summaries = _generate_rag_cards_only(client, query, retrieval_query, context_documents)
-        card_summary_source = "llm" if card_summaries else "local"
+        #time.sleep(1.0)
+        answer, card_summaries = _generate_rag_response(
+            client,
+            query,
+            retrieval_query,
+            context_documents,
+        )
+
+    if not answer:
+        answer_source = "local"
+        answer = _fallback_rag_answer(query, context_documents)
     if not card_summaries:
         card_summaries = _fallback_card_summaries(query, context_documents)
         card_summary_source = "local"
@@ -1050,31 +892,52 @@ def _rag_recommendations(query: str, limit: int, method: str, phase: str = "full
     for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
         name = suggestion.get("name", "")
         scientific_name = suggestion.get("scientific_name", "")
+        name_key = _rag_name_key(name)
+        scientific_key = f"scientific:{_rag_name_key(scientific_name)}"
         card_text = (
             card_summaries.get(f"rank:{suggestion_index}")
-            or card_summaries.get(_rag_name_key(name))
-            or card_summaries.get(f"scientific:{_rag_name_key(scientific_name)}")
+            or card_summaries.get(name_key)
+            or card_summaries.get(scientific_key)
             or {}
         )
-        data_summary = _local_data_summary({"name": name, "meanings": suggestion.get("meanings", []), "occasions": suggestion.get("occasions", [])})
-        suggestion["ir_summary"] = card_text.get("ir_summary") or data_summary
-        suggestion["ir_summary_source"] = card_summary_source if card_text.get("ir_summary") else "local"
-        suggestion["rag_summary"] = card_text.get("rag_summary") or data_summary
-        suggestion["rag_occasion_summary"] = card_text.get("rag_occasion_summary") or suggestion.get("query_fit_occasion_summary", "")
-        suggestion["rag_source"] = card_summary_source if card_text.get("rag_summary") else "local"
+        summary = card_text.get("rag_summary", "")
+        ir_summary = card_text.get("ir_summary", "")
+        occasion_summary = card_text.get("rag_occasion_summary", "")
+        data_summary = _local_data_summary(
+            {
+                "name": name,
+                "meanings": suggestion.get("meanings", []),
+                "occasions": suggestion.get("occasions", []),
+            }
+        )
+
+        suggestion["ir_summary"] = ir_summary or data_summary
+        suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
+        suggestion["rag_summary"] = summary or data_summary
+        suggestion["rag_occasion_summary"] = (
+            occasion_summary
+            if card_summary_source == "llm"
+            else occasion_summary or suggestion.get("query_fit_occasion_summary", "")
+        )
+        suggestion["rag_source"] = card_summary_source if summary else "local"
+        suggestion["rag_occasion_source"] = (
+            card_summary_source
+            if occasion_summary
+            else suggestion.get("occasion_summary_source", "")
+        )
         suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
+        suggestion["ir_query_fit_occasion_summary"] = suggestion.get("query_fit_occasion_summary", "")
 
     payload["rag"] = {
         "user_query": query,
         "retrieval_query": retrieval_query,
         "query_transform_source": transform_source,
         "query_transform_rationale": transform_rationale,
-        "answer": "",
-        "answer_source": "local",
+        "answer": answer,
+        "answer_source": answer_source,
         "context_documents": context_documents,
     }
     return payload
-
 
 
 @lru_cache(maxsize=1)
@@ -1121,17 +984,15 @@ def register_routes(app):
         limit = max(1, min(limit, 20))
         return jsonify(_recommend_with_fallback(query, limit, method))
 
-    # In register_routes, update the rag-recommendations handler:
     @app.route("/api/rag-recommendations")
     def rag_recommendations():
         query = request.args.get("q", "")
         method = request.args.get("method", "svd")
         limit = request.args.get("limit", default=5, type=int)
-        phase = request.args.get("phase", "full")  # "ir" | "overview" | "cards" | "full"
         limit = max(1, min(limit, 20))
         if not query or not query.strip():
             return jsonify(_recommend_with_fallback(query, limit, method))
-        return jsonify(_rag_recommendations(query, limit, method, phase=phase))
+        return jsonify(_rag_recommendations(query, limit, method))
 
     @app.route("/api/visualizer-flowers")
     def visualizer():
@@ -1176,9 +1037,7 @@ def register_routes(app):
         query = request.args.get("q", "")
         modules = _load_search_modules()
         return jsonify(modules["autocomplete_queries"](query))
-    
 
     if USE_LLM:
         from llm_routes import register_chat_route
         register_chat_route(app, json_search)
-

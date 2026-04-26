@@ -588,64 +588,45 @@ function App({ isActive = true }: AppProps): JSX.Element {
       window.clearTimeout(timeoutId)
     }
   }, [query])
-  
-  const [ragOverviewLoading, setRagOverviewLoading] = useState(false)
-  const [ragCardsLoading, setRagCardsLoading] = useState(false)
-const runSearch = async (nextQuery: string): Promise<void> => {
-  const trimmedQuery = nextQuery.trim()
-  skipNextAutocompleteRef.current = true
-  setAutocompleteEnabled(false)
-  setQuery(nextQuery)
-  setAutocompleteSuggestions([])
-  setAutocompleteOpen(false)
-  setAutocompleteLoading(false)
-  setActiveAutocompleteIndex(-1)
-  queryInputRef.current?.blur()
-  setExpandedDetailSections({})
-  setFlippedCards({})
 
-  if (!trimmedQuery) {
-    setResults(EMPTY_RESULTS)
-    setError('')
-    return
-  }
+  const runSearch = async (nextQuery: string): Promise<void> => {
+    const trimmedQuery = nextQuery.trim()
+    skipNextAutocompleteRef.current = true
+    setAutocompleteEnabled(false)
+    setQuery(nextQuery)
+    setAutocompleteSuggestions([])
+    setAutocompleteOpen(false)
+    setAutocompleteLoading(false)
+    setActiveAutocompleteIndex(-1)
+    queryInputRef.current?.blur()
+    setExpandedDetailSections({})
+    setFlippedCards({})
 
-  setLoading(true)
-  setRagCardsLoading(true)
-  setError('')
-
-  const base = `/api/rag-recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`
-
-   try {
-    const irData: RecommendationResponse = await fetch(`${base}&phase=ir`).then(r => r.json())
-    setResults(irData)
-    setAppliedLimit(resultLimit)
-    setLoading(false)
-
-    // Check if IR phase already returned rag_summary on cards
-    const needsCardHydration = irData.suggestions.some(s => !s.rag_summary?.trim())
-    
-    if (needsCardHydration) {
-      const cardsData: RecommendationResponse = await fetch(`${base}&phase=cards`).then(r => r.json())
-      setResults(prev => ({
-        ...prev,
-        suggestions: cardsData.suggestions.map((s, i) => ({
-          ...prev.suggestions[i],
-          rag_summary: s.rag_summary,
-          rag_occasion_summary: s.rag_occasion_summary,
-          rag_source: s.rag_source,
-        })),
-      }))
+    if (!trimmedQuery) {
+      setResults(EMPTY_RESULTS)
+      setError('')
+      return
     }
-    
-    setRagCardsLoading(false) }
-    catch (requestError) {
-    setResults(EMPTY_RESULTS)
-    setError(requestError instanceof Error ? requestError.message : 'Search failed')
-    setLoading(false)
-    setRagCardsLoading(false)
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`/api/rag-recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+
+      const data: RecommendationResponse = await response.json()
+      setResults(data)
+      setAppliedLimit(resultLimit)
+    } catch (requestError) {
+      setResults(EMPTY_RESULTS)
+      setError(requestError instanceof Error ? requestError.message : 'Search failed')
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
   const applyAutocompleteSuggestion = async (suggestion: string): Promise<void> => {
     await runSearch(suggestion)
@@ -1053,49 +1034,41 @@ const runSearch = async (nextQuery: string): Promise<void> => {
                             <span className="detail-label">RAG Recommendation</span>
                             <small>{ragSource}</small>
                           </div>
-                          {ragCardsLoading && !suggestion.rag_summary  ? (
-  <div className="rag-loading-shimmer">
-    <span /><span /><span />
-  </div>
-) : (
-  <>
-    <div className="rag-card-section">
-      <span>Why this matches</span>
-      <p className="rag-card-summary">
-        {renderHighlightedText(ragCombinedSummary, highlightTerms)}
-      </p>
-    </div>
-    <div className="rag-card-facts">
-      <div>
-        <span>Colors</span>
-        <strong>{formatLabel(suggestion.colors)}</strong>
-      </div>
-      <div>
-        <span>Care</span>
-        <strong>{formatMaintenanceLabel(suggestion.maintenance)}</strong>
-      </div>
-      <div>
-        <span>Type</span>
-        <strong>{formatLabel(suggestion.plant_types)}</strong>
-      </div>
-    </div>
-    {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
-      <div className="rag-card-query">
-        <span>Refined search query</span>
-        <strong>{results.rag.retrieval_query}</strong>
-      </div>
-    )}
-    {suggestion.matched_keywords.length > 0 && (
-      <div className="rag-card-match-list">
-        {suggestion.matched_keywords.slice(0, 4).map((match, matchIndex) => (
-          <span key={`${match.keyword}-${match.category}-${matchIndex}`}>
-            {match.keyword}
-          </span>
-        ))}
-      </div>
-    )}
-  </>
-)}
+                          <div className="rag-card-section">
+                            <span>Why this matches</span>
+                            <p className="rag-card-summary">
+                              {renderHighlightedText(ragCombinedSummary, highlightTerms)}
+                            </p>
+                          </div>
+                          <div className="rag-card-facts">
+                            <div>
+                              <span>Colors</span>
+                              <strong>{formatLabel(suggestion.colors)}</strong>
+                            </div>
+                            <div>
+                              <span>Care</span>
+                              <strong>{formatMaintenanceLabel(suggestion.maintenance)}</strong>
+                            </div>
+                            <div>
+                              <span>Type</span>
+                              <strong>{formatLabel(suggestion.plant_types)}</strong>
+                            </div>
+                          </div>
+                          {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
+                            <div className="rag-card-query">
+                              <span>Refined search query</span>
+                              <strong>{results.rag.retrieval_query}</strong>
+                            </div>
+                          )}
+                          {suggestion.matched_keywords.length > 0 && (
+                            <div className="rag-card-match-list">
+                              {suggestion.matched_keywords.slice(0, 4).map((match, matchIndex) => (
+                                <span key={`${match.keyword}-${match.category}-${matchIndex}`}>
+                                  {match.keyword}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </section>
                       </div>
                     </div>
