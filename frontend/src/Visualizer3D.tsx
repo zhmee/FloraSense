@@ -1295,10 +1295,12 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
     })
     ro.observe(container)
     onSceneStatusChange(
-      'ready',
-      'Drag to rotate\nScroll to zoom\nClick a flower to focus',
-    )
-
+  'ready',
+  `• Drag to rotate
+  • Scroll to zoom
+  • Click a flower to focus
+  • Similar flowers are linked`
+  );
     return () => {
       cancelAnimationFrame(s.rafId); ro.disconnect()
       canvasEl.removeEventListener('pointerdown', onDown)
@@ -1896,14 +1898,14 @@ return (
           display: 'inline-block',
           animation: 'spin 0.7s linear infinite',
         }} />
-        Calculating your bouquet's balance...
+        Calculating your bouquet's meanings...
       </div>
     )}
 
     {myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-          Your Bouquet's Balance
+          Your Bouquet's meanings
         </div>
         <div className="viz-chip-list">
           {myBouquetInsights.meanings.slice(0, 4).map(m => (
