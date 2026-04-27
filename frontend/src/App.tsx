@@ -444,6 +444,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
       let pointerY = window.innerHeight * 0.5
       let frameId = 0
       const offsets = flowers.map(() => ({ x: 0, y: 0 }))
+      const centers = flowers.map(() => ({ x: 0, y: 0, radius: 180, depth: 1 }))
 
       animate('.bg-flower', {
         opacity: [0, 1],
@@ -453,19 +454,31 @@ function App({ isActive = true }: AppProps): JSX.Element {
         ease: 'out(4)',
       })
 
-      const render = (): void => {
+      const updateCenters = (): void => {
+        const rootRect = root.getBoundingClientRect()
         flowers.forEach((flower, index) => {
           const rect = flower.getBoundingClientRect()
-          const centerX = rect.left + rect.width / 2
-          const centerY = rect.top + rect.height / 2
-          const dx = centerX - pointerX
-          const dy = centerY - pointerY
+          centers[index].x = rect.left - rootRect.left + rect.width / 2
+          centers[index].y = rect.top - rootRect.top + rect.height / 2
+          centers[index].radius = rect.width * 0.95 + 90
+          centers[index].depth = Number(flower.dataset.depth ?? '1')
+        })
+      }
+
+      updateCenters()
+
+      const render = (): void => {
+        const rootRect = root.getBoundingClientRect()
+        const localPointerX = pointerX - rootRect.left
+        const localPointerY = pointerY - rootRect.top
+        flowers.forEach((flower, index) => {
+          const center = centers[index]
+          const dx = center.x - localPointerX
+          const dy = center.y - localPointerY
           const distance = Math.hypot(dx, dy) || 1
-          const radius = rect.width * 0.95 + 90
-          const strength = Math.max(0, 1 - distance / radius)
-          const depth = Number(flower.dataset.depth ?? '1')
-          const desiredX = strength > 0 ? (dx / distance) * strength * 42 * depth : 0
-          const desiredY = strength > 0 ? (dy / distance) * strength * 34 * depth : 0
+          const strength = Math.max(0, 1 - distance / center.radius)
+          const desiredX = strength > 0 ? (dx / distance) * strength * 42 * center.depth : 0
+          const desiredY = strength > 0 ? (dy / distance) * strength * 34 * center.depth : 0
 
           offsets[index].x += (desiredX - offsets[index].x) * 0.16
           offsets[index].y += (desiredY - offsets[index].y) * 0.16
@@ -489,11 +502,13 @@ function App({ isActive = true }: AppProps): JSX.Element {
       frameId = window.requestAnimationFrame(render)
       window.addEventListener('pointermove', handlePointerMove)
       window.addEventListener('pointerleave', handlePointerLeave)
+      window.addEventListener('resize', updateCenters)
 
       return () => {
         window.cancelAnimationFrame(frameId)
         window.removeEventListener('pointermove', handlePointerMove)
         window.removeEventListener('pointerleave', handlePointerLeave)
+        window.removeEventListener('resize', updateCenters)
       }
     })
 

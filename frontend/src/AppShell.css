@@ -52,8 +52,18 @@
   display: block;
 }
 
-.fs-shell--visualizer {
+.fs-shell__loading {
   min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #6c5a4b;
+  font-weight: 600;
+}
+
+.fs-shell--visualizer {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
   background:
     radial-gradient(circle at top, rgba(255, 248, 239, 0.82), rgba(255, 248, 239, 0) 34%),
     linear-gradient(180deg, #f7ede0 0%, #ecdeca 100%);
@@ -61,7 +71,9 @@
 
 .fs-shell--visualizer .fs-shell__content {
   margin-top: 0;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .fs-shell--visualizer .fs-shell__panel--visualizer {
@@ -69,12 +81,13 @@
 }
 
 .fs-shell--visualizer .viz-shell {
-  width: 100vw;
+  width: 100%;
   max-width: none;
   min-height: 100vh;
   margin: 0;
   padding: var(--fs-nav-clearance) 0 0;
   gap: 0;
+  overflow-x: clip;
 }
 
 .fs-shell--visualizer .viz-header {
@@ -104,7 +117,15 @@
   width: min(360px, calc(100vw - 36px));
   max-height: calc(100% - 36px);
   overflow: auto;
-  padding-right: 2px;
+  padding: 12px;
+  justify-items: stretch;
+  box-sizing: border-box;
+}
+
+.fs-shell--visualizer .viz-sidebar > .viz-info-card {
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .fs-shell--visualizer .viz-grid-section {

@@ -43,6 +43,7 @@ function HeroSection({ onScrollDown }: HeroSectionProps): JSX.Element {
     const tagline = hero.querySelector<HTMLElement>('.hero-tagline')
     const cta = hero.querySelector<HTMLElement>('.hero-scroll-cta')
     let introFrame = 0
+    let ambientStartTimeout = 0
 
     const revealHero = () => {
       hero.dataset.ready = 'true'
@@ -93,12 +94,12 @@ function HeroSection({ onScrollDown }: HeroSectionProps): JSX.Element {
         if (titleCharacters.length > 0) {
           tl.add(titleCharacters, {
             opacity: [0, 1],
-            translateY: [60, 0],
-            rotate: ['-8deg', '0deg'],
-            scale: [0.7, 1],
-            delay: stagger(55),
-            duration: 700,
-            ease: 'spring(1, 90, 10, 0)',
+            translateY: [44, 0],
+            rotate: ['-6deg', '0deg'],
+            scale: [0.84, 1],
+            delay: stagger(46),
+            duration: 640,
+            ease: 'spring(1, 82, 10, 0)',
           }, 700)
         }
 
@@ -126,11 +127,6 @@ function HeroSection({ onScrollDown }: HeroSectionProps): JSX.Element {
       x: 0,
       y: 0,
       scale: 1,
-      brightness: 1,
-      saturation: 1,
-      shadowY: 12,
-      shadowBlur: 24,
-      shadowAlpha: 0.14,
       phase: Math.random() * Math.PI * 2,
       speed: 0.00045 + Math.random() * 0.00035,
       amplitudeX: 8 + Math.random() * 16,
@@ -141,50 +137,50 @@ function HeroSection({ onScrollDown }: HeroSectionProps): JSX.Element {
     let pointerX = window.innerWidth * 0.5
     let pointerY = window.innerHeight * 0.5
     let frameId = 0
+    const centers = petals.map(() => ({ x: 0, y: 0, radius: 180, depth: 1 }))
+
+    const updateCenters = () => {
+      const heroRect = hero.getBoundingClientRect()
+      petals.forEach((petal, index) => {
+        const rect = petal.getBoundingClientRect()
+        centers[index].x = rect.left - heroRect.left + rect.width / 2
+        centers[index].y = rect.top - heroRect.top + rect.height / 2
+        centers[index].radius = rect.width * 0.95 + 90
+        centers[index].depth = Number(petal.dataset.depth ?? '1')
+      })
+    }
+
+    updateCenters()
 
     const render = (time: number) => {
+      const heroRect = hero.getBoundingClientRect()
+      const localPointerX = pointerX - heroRect.left
+      const localPointerY = pointerY - heroRect.top
       petals.forEach((petal, index) => {
         const state = states[index]
         const angle = time * state.speed + state.phase
         const ambientX = Math.sin(angle) * state.amplitudeX
         const ambientY = Math.cos(angle * 0.72) * state.amplitudeY
-        const rect = petal.getBoundingClientRect()
-        const centerX = rect.left + rect.width / 2
-        const centerY = rect.top + rect.height / 2
-        const dx = centerX - pointerX
-        const dy = centerY - pointerY
+        const center = centers[index]
+        const dx = center.x - localPointerX
+        const dy = center.y - localPointerY
         const distance = Math.hypot(dx, dy) || 1
-        const radius = rect.width * 0.95 + 90
-        const strength = Math.max(0, 1 - distance / radius)
-        const depth = Number(petal.dataset.depth ?? '1')
+        const strength = Math.max(0, 1 - distance / center.radius)
+        const depth = center.depth
 
         const desiredX = strength > 0 ? (dx / distance) * strength * 38 * depth : 0
         const desiredY = strength > 0 ? (dy / distance) * strength * 32 * depth : 0
         const desiredScale = 1 + strength * 0.28
-        const desiredBrightness = 1 + strength * 0.22
-        const desiredSaturation = 1 + strength * 0.9
-        const desiredShadowY = 12 + strength * 18
-        const desiredShadowBlur = 24 + strength * 38
-        const desiredShadowAlpha = 0.14 + strength * 0.28
         const desiredRotationBoost = strength * 15
 
         state.x += (desiredX - state.x) * 0.18
         state.y += (desiredY - state.y) * 0.18
         state.scale += (desiredScale - state.scale) * 0.18
-        state.brightness += (desiredBrightness - state.brightness) * 0.18
-        state.saturation += (desiredSaturation - state.saturation) * 0.18
-        state.shadowY += (desiredShadowY - state.shadowY) * 0.18
-        state.shadowBlur += (desiredShadowBlur - state.shadowBlur) * 0.18
-        state.shadowAlpha += (desiredShadowAlpha - state.shadowAlpha) * 0.18
         state.rotationBoost += (desiredRotationBoost - state.rotationBoost) * 0.18
 
         const rotation = Math.sin(angle * 0.5) * state.spinAmplitude + state.rotationBoost
         petal.style.transform =
           `translate3d(${ambientX + state.x}px, ${ambientY + state.y}px, 0) rotate(${rotation}deg) scale(${state.scale})`
-        petal.style.filter =
-          `drop-shadow(0 ${state.shadowY}px ${state.shadowBlur}px rgba(109, 81, 47, ${state.shadowAlpha})) ` +
-          `drop-shadow(0 0 ${16 + strength * 28}px rgba(255, 239, 196, ${0.08 + strength * 0.24})) ` +
-          `saturate(${state.saturation}) brightness(${state.brightness})`
       })
 
       frameId = window.requestAnimationFrame(render)
@@ -200,15 +196,26 @@ function HeroSection({ onScrollDown }: HeroSectionProps): JSX.Element {
       pointerY = -1000
     }
 
-    frameId = window.requestAnimationFrame(render)
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerleave', onPointerLeave)
+    const startAmbientMotion = () => {
+      frameId = window.requestAnimationFrame(render)
+      window.addEventListener('pointermove', onPointerMove)
+      window.addEventListener('pointerleave', onPointerLeave)
+      window.addEventListener('resize', updateCenters)
+    }
+
+    // Keep startup smooth: let per-character title spring finish first,
+    // then start the continuous petal ambient/parallax loop.
+    ambientStartTimeout = window.setTimeout(() => {
+      startAmbientMotion()
+    }, hasAnimated.current ? 1550 : 0)
 
     return () => {
       window.cancelAnimationFrame(introFrame)
       window.cancelAnimationFrame(frameId)
+      window.clearTimeout(ambientStartTimeout)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerleave', onPointerLeave)
+      window.removeEventListener('resize', updateCenters)
     }
   }, [])
 

@@ -3,7 +3,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatFlowerDisplayName } from './flowerDisplay'
 import type { BouquetInsightsResponse, VisualizerFlower, VisualizerFlowersResponse } from './types'
 import './Visualizer3D.css'
-import './App.css'
 import FlowerCoral from './assets/flower-coral.svg'
 import FlowerGold from './assets/flower-gold.svg'
 import FlowerOlive from './assets/flower-olive.svg'
@@ -83,6 +82,12 @@ interface ProjectedNode {
 
 interface Visualizer3DProps {
   isActive?: boolean
+}
+
+function getSceneStatusLabel(status: SceneStatus): string {
+  if (status === 'loading') return 'Preparing view'
+  if (status === 'ready') return 'Visualizer live'
+  return 'Load issue'
 }
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
@@ -1289,7 +1294,10 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
       else setOverviewViewport()
     })
     ro.observe(container)
-    onSceneStatusChange('ready', 'Drag to rotate the field · scroll to zoom · click a flower to move closer')
+    onSceneStatusChange(
+      'ready',
+      'Drag to rotate\nScroll to zoom\nClick a flower to focus',
+    )
 
     return () => {
       cancelAnimationFrame(s.rafId); ro.disconnect()
@@ -1387,20 +1395,33 @@ useEffect(() => {
   let pointerY = window.innerHeight * 0.5
   let frameId = 0
   const offsets = flowers.map(() => ({ x: 0, y: 0 }))
+  const centers = flowers.map(() => ({ x: 0, y: 0, radius: 180, depth: 1 }))
+
+  const updateCenters = () => {
+    const shellRect = shell.getBoundingClientRect()
+    flowers.forEach((flower, index) => {
+      const rect = flower.getBoundingClientRect()
+      centers[index].x = rect.left - shellRect.left + rect.width / 2
+      centers[index].y = rect.top - shellRect.top + rect.height / 2
+      centers[index].radius = rect.width * 0.95 + 90
+      centers[index].depth = Number(flower.dataset.depth ?? '1')
+    })
+  }
+
+  updateCenters()
 
   const render = () => {
+    const shellRect = shell.getBoundingClientRect()
+    const localPointerX = pointerX - shellRect.left
+    const localPointerY = pointerY - shellRect.top
     flowers.forEach((flower, i) => {
-      const rect = flower.getBoundingClientRect()
-      const cx = rect.left + rect.width / 2
-      const cy = rect.top + rect.height / 2
-      const dx = cx - pointerX
-      const dy = cy - pointerY
+      const center = centers[i]
+      const dx = center.x - localPointerX
+      const dy = center.y - localPointerY
       const dist = Math.hypot(dx, dy) || 1
-      const radius = rect.width * 0.95 + 90
-      const strength = Math.max(0, 1 - dist / radius)
-      const depth = Number(flower.dataset.depth ?? '1')
-      const tx = strength > 0 ? (dx / dist) * strength * 42 * depth : 0
-      const ty = strength > 0 ? (dy / dist) * strength * 34 * depth : 0
+      const strength = Math.max(0, 1 - dist / center.radius)
+      const tx = strength > 0 ? (dx / dist) * strength * 42 * center.depth : 0
+      const ty = strength > 0 ? (dy / dist) * strength * 34 * center.depth : 0
       offsets[i].x += (tx - offsets[i].x) * 0.16
       offsets[i].y += (ty - offsets[i].y) * 0.16
       flower.style.transform = `translate3d(${offsets[i].x}px, ${offsets[i].y}px, 0)`
@@ -1414,11 +1435,13 @@ useEffect(() => {
   frameId = requestAnimationFrame(render)
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerleave', onLeave)
+  window.addEventListener('resize', updateCenters)
 
   return () => {
     cancelAnimationFrame(frameId)
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerleave', onLeave)
+    window.removeEventListener('resize', updateCenters)
   }
 }, [isActive])
 //BIG FLOWERS END
@@ -1790,7 +1813,7 @@ return (
               textTransform: 'uppercase',
               color: 'var(--viz-accent)', fontWeight: 700,
             }}>
-              FloraSense 3D Visualizer
+              3D Visualizer
             </p>
 
             <h2 style={{
@@ -1800,7 +1823,7 @@ return (
               letterSpacing: '-0.03em', lineHeight: 1.1,
               color: 'var(--viz-ink)',
             }}>
-              Ready to build your<br />own bouquet?
+              Ready to Build Your<br />Own Bouquet?
             </h2>
 
             <p style={{
@@ -1808,7 +1831,7 @@ return (
               fontSize: '1rem', lineHeight: 1.7,
               color: 'var(--viz-muted)', maxWidth: 340,
             }}>
-              Explore flower meanings and create your own bouquet to convey everything you intend
+              Explore flower meanings and create your own bouquet to convey everything you intend.
             </p>
 
             <button
@@ -1816,7 +1839,7 @@ return (
               className="viz-hud__action"
               style={{ marginTop: 8, padding: '0 32px', minHeight: 48, fontSize: '1rem', fontWeight: 700 }}
             >
-              Click to start 🌸
+              🌸 Start 🌸
             </button>
           </div>
         </div>
@@ -1835,14 +1858,32 @@ return (
             <div className="viz-canvas__fallback">{loadError ?? 'Loading 3D Visualizer...'}</div>
           )}
           <div className="viz-hud">
-            <div className="viz-hud__badge">
-              <span className={`viz-panel__status viz-panel__status--${sceneStatus}`}>{sceneStatus}</span>
-              <p className="viz-panel__message">{statusMessage}</p>
+            <div className="viz-hud__left">
+              <div className="viz-hud__badge">
+              <span className={`viz-panel__status viz-panel__status--${sceneStatus}`}>{getSceneStatusLabel(sceneStatus)}</span>
+              <p className="viz-panel__message viz-panel__message--instructions">{statusMessage}</p>
               <div className="viz-hud__actions">
                 <button type="button" className="viz-hud__action" onClick={handleResetFocus}>
                   Reset focus
                 </button>
               </div>
+            </div>
+              {selectedFlower && (
+                <div className="viz-info-card viz-hud__semantic-signals">
+                  <div className="viz-focused-flower">
+                    <strong className="viz-focused-flower__name">{formatFlowerDisplayName(selectedFlower.name)}</strong>
+                    <span className="viz-focused-flower__scientific">{selectedFlower.scientific_name}</span>
+                  </div>
+                  <div className="viz-meta-block">
+                    {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
+                      <div key={label}>
+                        <h4>{label}</h4>
+                        <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="viz-hud__meta">
               <strong>{flowers.length} flowers in the field</strong>
@@ -1853,13 +1894,13 @@ return (
           
   
 <aside className="viz-sidebar">
-  <div className="viz-info-card">
-    <h3>🌸 My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''})</h3>
+  <div className="viz-info-card viz-info-card--my-bouquet">
+    <h3>🌸 My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''}) 🌸</h3>
 
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
       {myBouquetIds.length === 0 && (
         <span style={{ fontSize: 12, color: 'var(--viz-muted)' }}>
-          Select a flower and click "+ Add to my bouquet"
+          Select a flower and click "+ Add to My Bouquet"
         </span>
       )}
       {myBouquetIds.map(id => {
@@ -1891,21 +1932,21 @@ return (
     </div>
 
     {myBouquetInsightsStatus === 'loading' && myBouquetIds.length >= 2 && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--viz-muted)', fontSize: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 0', color: 'var(--viz-muted)', fontSize: 12, width: '100%', textAlign: 'center' }}>
         <span style={{
           width: 14, height: 14, border: '2px solid currentColor',
           borderTopColor: 'transparent', borderRadius: '50%',
           display: 'inline-block',
           animation: 'spin 0.7s linear infinite',
         }} />
-        Calculating meaning balance…
+        Calculating your bouquet's balance...
       </div>
     )}
 
     {myBouquetInsightsStatus === 'ready' && myBouquetInsights && myBouquetInsights.meanings.length > 0 && (
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--viz-muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-          Meaning balance
+          Your Bouquet's Balance
         </div>
         <div className="viz-chip-list">
           {myBouquetInsights.meanings.slice(0, 4).map(m => (
@@ -1959,23 +2000,6 @@ return (
     )}
   </div>
 
-{selectedFlower && (
-  <div className="viz-info-card">
-    <h3>Semantic Signals</h3>
-    <p style={{ fontSize: 12, color: 'var(--viz-muted)', marginBottom: 12 }}>
-      {formatFlowerDisplayName(selectedFlower.name)} · {selectedFlower.scientific_name}
-    </p>
-    <div className="viz-meta-block">
-        
-        {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
-          <div key={label}>
-            <h4>{label}</h4>
-            <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )}
 </aside>
       </div>
 
@@ -1994,11 +2018,11 @@ return (
         style={{ color: '#4d6242', borderColor: 'rgba(103,115,84,0.28)' }}
         onClick={() => handleRemoveFromBouquet(selectedFlower.id)}
       >
-        ✓ In my bouquet — click to remove
+        ✓ In My Bouquet — Click to Remove
       </button>
     ) : (
       <button className="viz-hud__action" onClick={() => handleAddToBouquet(selectedFlower.id)}>
-        + Add to my bouquet
+        + Add to My Bouquet
       </button>
     )}
   </div>
