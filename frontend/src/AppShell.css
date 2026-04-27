@@ -100,6 +100,12 @@
   padding: 0;
 }
 
+.fs-shell--visualizer .viz-stage--focused {
+  display: block;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+
 .fs-shell--visualizer .viz-canvas {
   min-height: calc(100vh - var(--fs-nav-clearance));
   height: calc(100vh - var(--fs-nav-clearance));
@@ -120,6 +126,10 @@
   padding: 12px;
   justify-items: stretch;
   box-sizing: border-box;
+}
+
+.fs-shell--visualizer .viz-stage--focused .viz-canvas__mount {
+  transform: none !important;
 }
 
 .fs-shell--visualizer .viz-sidebar > .viz-info-card {

@@ -1371,7 +1371,6 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
 
   // ── BOUQUE PORTION START  ────────────────────────────────────────────────────
 const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
-const [bouquetTrayOpen] = useState(false)
 const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
 const [myBouquetInsightsStatus, setMyBouquetInsightsStatus] = useState<InsightsStatus>('idle')
 const [introDismissed, setIntroDismissed] = useState(false)
@@ -1383,7 +1382,6 @@ const [introDismissed, setIntroDismissed] = useState(false)
 
 useEffect(() => {
   if (!isActive) return
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
   const shell = vizShellRef.current
   if (!shell) return
@@ -1391,57 +1389,14 @@ useEffect(() => {
   const flowers = Array.from(shell.querySelectorAll<HTMLElement>('.viz-bg-flower'))
   if (!flowers.length) return
 
-  let pointerX = window.innerWidth * 0.5
-  let pointerY = window.innerHeight * 0.5
-  let frameId = 0
-  const offsets = flowers.map(() => ({ x: 0, y: 0 }))
-  const centers = flowers.map(() => ({ x: 0, y: 0, radius: 180, depth: 1 }))
-
-  const updateCenters = () => {
-    const shellRect = shell.getBoundingClientRect()
-    flowers.forEach((flower, index) => {
-      const rect = flower.getBoundingClientRect()
-      centers[index].x = rect.left - shellRect.left + rect.width / 2
-      centers[index].y = rect.top - shellRect.top + rect.height / 2
-      centers[index].radius = rect.width * 0.95 + 90
-      centers[index].depth = Number(flower.dataset.depth ?? '1')
-    })
-  }
-
-  updateCenters()
-
-  const render = () => {
-    const shellRect = shell.getBoundingClientRect()
-    const localPointerX = pointerX - shellRect.left
-    const localPointerY = pointerY - shellRect.top
-    flowers.forEach((flower, i) => {
-      const center = centers[i]
-      const dx = center.x - localPointerX
-      const dy = center.y - localPointerY
-      const dist = Math.hypot(dx, dy) || 1
-      const strength = Math.max(0, 1 - dist / center.radius)
-      const tx = strength > 0 ? (dx / dist) * strength * 42 * center.depth : 0
-      const ty = strength > 0 ? (dy / dist) * strength * 34 * center.depth : 0
-      offsets[i].x += (tx - offsets[i].x) * 0.16
-      offsets[i].y += (ty - offsets[i].y) * 0.16
-      flower.style.transform = `translate3d(${offsets[i].x}px, ${offsets[i].y}px, 0)`
-    })
-    frameId = requestAnimationFrame(render)
-  }
-
-  const onMove = (e: PointerEvent) => { pointerX = e.clientX; pointerY = e.clientY }
-  const onLeave = () => { pointerX = -1000; pointerY = -1000 }
-
-  frameId = requestAnimationFrame(render)
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerleave', onLeave)
-  window.addEventListener('resize', updateCenters)
+  flowers.forEach((flower) => {
+    flower.style.transform = 'translate3d(0px, 0px, 0px)'
+  })
 
   return () => {
-    cancelAnimationFrame(frameId)
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerleave', onLeave)
-    window.removeEventListener('resize', updateCenters)
+    flowers.forEach((flower) => {
+      flower.style.transform = ''
+    })
   }
 }, [isActive])
 //BIG FLOWERS END
@@ -1594,7 +1549,7 @@ useEffect(() => {
     })
     .catch(() => { if (!cancelled) setMyBouquetInsightsStatus('error') })
   return () => { cancelled = true }
-}, [isActive, bouquetTrayOpen, myBouquetScientificNames])
+}, [isActive, myBouquetScientificNames])
 
   // ─── My Bouquet insights fetch (END) ─────────────────────────────────────
   useEffect(() => {
@@ -1611,7 +1566,7 @@ useEffect(() => {
     introAnimatedRef.current = true
 
     const headerItems = shell.querySelectorAll('.viz-eyebrow, .viz-title, .viz-subtitle')
-    const stageItems = shell.querySelectorAll('.viz-canvas, .viz-hud__badge, .viz-hud__meta')
+    const stageItems = shell.querySelectorAll('.viz-canvas, .viz-hud__badge')
     const sidebarCards = shell.querySelectorAll('.viz-sidebar > .viz-info-card')
 
     const animations = [
@@ -1724,7 +1679,7 @@ return (
               zIndex: 0,
             }}
           >
-            <img src={f.image} alt="" style={{ width: '100%', height: '100%', opacity: 1 }} />
+            <img src={f.image} alt="" style={{ width: '100%', height: '100%', opacity: 0.35 }} />
           </div>
         ))}
       </div>
@@ -1885,17 +1840,19 @@ return (
                 </div>
               )}
             </div>
-            <div className="viz-hud__meta">
-              <strong>{flowers.length} flowers in the field</strong>
-              <span>{semanticGraph.edges.length} visible semantic links across meaning, color, occasion, and latent similarity</span>
-            </div>
           </div>
         </div>
           
   
 <aside className="viz-sidebar">
   <div className="viz-info-card viz-info-card--my-bouquet">
-    <h3>🌸 My Bouquet ({myBouquetIds.length} flower{myBouquetIds.length !== 1 ? 's' : ''}) 🌸</h3>
+    <h3>
+      🌸 My Bouquet 🌸
+      <br />
+      <span style={{ display: 'inline-block', marginTop: 4 }}>
+        ({myBouquetIds.length} Flowers)
+      </span>
+    </h3>
 
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
       {myBouquetIds.length === 0 && (
