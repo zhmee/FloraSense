@@ -1,17 +1,16 @@
 WELCOME TO: FLORASENSE 
 
-
 # 🌸 Flower Recommendation & Visualization Platform
 
 ## Overview
 
-This project is an intelligent flower recommendation and visualization system that combines traditional information retrieval techniques with modern AI-powered reasoning. It allows users to search for flowers based on meaning, occasion, aesthetics, and care preferences, and returns personalized recommendations with rich explanations.
+This project is an flower recommendation and visualization system that combines information retrieval techniques with AI-powered reasoning. It allows users to search for flowers based on meaning, occasion, aesthetics, and care preferences, and returns personalized recommendations with explanations behind each decision.
 
 The system integrates:
 
-* Classical recommendation methods (SVD, TF-IDF)
+* Classic recommendation methods (SVD, TF-IDF)
 * Retrieval-Augmented Generation (RAG)
-* Optional Large Language Model (LLM) reasoning
+* Large Language Model (LLM) reasoning
 * Interactive frontend visualization
 
 ---
@@ -29,35 +28,27 @@ The system integrates:
   * Maintenance level
 * Returns ranked flower suggestions with relevance scores
 
-### 2. Dual Recommendation Engine
+### 2. In Recommendation Engines
 
 * **SVD-based recommendations**: captures latent relationships between flowers and attributes
-* **TF-IDF fallback**: ensures robust performance even when SVD fails
+* **TF-IDF fallback**: Try out direct term frequncy and document queries!
 
 ### 3. Retrieval-Augmented Generation (RAG)
 
 * Transforms user queries into optimized search queries
 * Retrieves structured flower data
-* Uses LLMs (optional) to generate:
+* Uses LLMs to generate:
 
   * Natural language summaries
   * "Why this matches" explanations
   * Occasion-based recommendations
 
-### 4. AI-Powered Explanations
-
-* When enabled, the system:
-
-  * Rewrites explanations into polished, human-friendly text
-  * Improves readability of raw data
-  * Generates comparative summaries across flowers
-
-### 5. Hard Filtering System
+### 4. Hard Filtering System
 
 * Supports exclusion constraints (e.g., *"not roses", "not yellow"*)
 * Filters results strictly based on user intent
 
-### 6. Flower Visualization
+### 5. Flower Visualization
 
 * Interactive visualization of flower sets
 * Bouquet-level insights:
@@ -65,7 +56,7 @@ The system integrates:
   * Combined meanings
   * Suggested complementary flowers
 
-### 7. Autocomplete Search
+### 6. Autocomplete Search
 
 * Provides real-time query suggestions
 * Helps users refine searches quickly
@@ -74,15 +65,11 @@ The system integrates:
 
 ### Backend (Flask)
 
-* Modular design with:
-
   * Recommendation engines
   * LLM integration layer
   * Data normalization and filtering
 
 ### Frontend (React + Vite)
-
-* Interactive UI for:
 
   * Searching and browsing flowers
   * Viewing explanations and summaries
