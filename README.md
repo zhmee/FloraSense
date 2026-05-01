@@ -31,7 +31,7 @@ The system integrates:
 ### 2. In Recommendation Engines
 
 * **SVD-based recommendations**: captures latent relationships between flowers and attributes
-* **TF-IDF fallback**: Try out direct term frequncy and document queries!
+* **TF-IDF fallback**: Try out direct term frequency and document queries!
 
 ### 3. Retrieval-Augmented Generation (RAG)
 
