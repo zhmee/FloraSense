@@ -8,7 +8,7 @@ import FlowerGold from './assets/flower-gold.svg'
 import FlowerOlive from './assets/flower-olive.svg'
 import FlowerRose from './assets/flower-rose.svg'
 import { formatFlowerDisplayName } from './flowerDisplay'
-import { AutocompleteResponse, KeywordUsed, RecommendationResponse } from './types'
+import { AutocompleteResponse, FlowerSuggestion, KeywordUsed, RecommendationResponse } from './types'
 
 const EMPTY_RESULTS: RecommendationResponse = {
   query: '',
@@ -299,7 +299,10 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const [activeAutocompleteIndex, setActiveAutocompleteIndex] = useState<number>(-1)
   const [expandedDetailSections, setExpandedDetailSections] = useState<Record<string, boolean>>({})
   const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({})
+  const [refiningCards, setRefiningCards] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState<boolean>(false)
+  const [ragOverviewLoading, setRagOverviewLoading] = useState<boolean>(false)
+  const [displayedRagAnswer, setDisplayedRagAnswer] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [resultLimit, setResultLimit] = useState<number>(5)
   const [appliedLimit, setAppliedLimit] = useState<number>(5)
@@ -309,11 +312,64 @@ function App({ isActive = true }: AppProps): JSX.Element {
   const animationScopeRef = useRef<ReturnType<typeof createScope> | null>(null)
   const loadingAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
   const autocompleteRequestRef = useRef<number>(0)
+  const ragRequestRef = useRef<number>(0)
   const skipNextAutocompleteRef = useRef<boolean>(false)
 
   const queryBreakdownKeywords = getQueryBreakdownKeywords(results)
   // const topScore = results.suggestions[0]?.score ?? 0
   const showAnimatedQuery = isActive && !query && !isQueryFocused
+  const ragAnswer = results.rag?.answer ?? ''
+  const isRagTyping = Boolean(ragAnswer && displayedRagAnswer.length < ragAnswer.length)
+
+  const fetchRagOverview = async (
+    requestQuery: string,
+    requestLimit: number,
+    requestMethod: 'svd' | 'tfidf',
+  ): Promise<void> => {
+    const requestId = ragRequestRef.current + 1
+    ragRequestRef.current = requestId
+    setRagOverviewLoading(true)
+
+    try {
+      const response = await fetch(`/api/rag-overview?q=${encodeURIComponent(requestQuery)}&limit=${requestLimit}&method=${requestMethod}`)
+      if (!response.ok) {
+        throw new Error(`RAG overview failed with status ${response.status}`)
+      }
+
+      const overviewResults: RecommendationResponse = await response.json()
+      if (ragRequestRef.current !== requestId) return
+      setResults((currentResults) => {
+        if (currentResults.query.trim() !== requestQuery) return currentResults
+        return { ...currentResults, rag: overviewResults.rag }
+      })
+    } catch (requestError) {
+      if (ragRequestRef.current !== requestId) return
+      setError(requestError instanceof Error ? requestError.message : 'RAG overview failed')
+    } finally {
+      if (ragRequestRef.current === requestId) {
+        setRagOverviewLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!ragAnswer) {
+      setDisplayedRagAnswer('')
+      return
+    }
+
+    setDisplayedRagAnswer('')
+    let index = 0
+    const intervalId = window.setInterval(() => {
+      index = Math.min(index + 3, ragAnswer.length)
+      setDisplayedRagAnswer(ragAnswer.slice(0, index))
+      if (index >= ragAnswer.length) {
+        window.clearInterval(intervalId)
+      }
+    }, 24)
+
+    return () => window.clearInterval(intervalId)
+  }, [ragAnswer])
 
   useEffect(() => {
     if (!showAnimatedQuery) {
@@ -616,6 +672,10 @@ function App({ isActive = true }: AppProps): JSX.Element {
     queryInputRef.current?.blur()
     setExpandedDetailSections({})
     setFlippedCards({})
+    setRefiningCards({})
+    setRagOverviewLoading(false)
+    setDisplayedRagAnswer('')
+    ragRequestRef.current += 1
 
     if (!trimmedQuery) {
       setResults(EMPTY_RESULTS)
@@ -627,7 +687,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
     setError('')
 
     try {
-      const response = await fetch(`/api/rag-recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
+      const response = await fetch(`/api/recommendations?q=${encodeURIComponent(trimmedQuery)}&limit=${resultLimit}&method=${searchMethod}`)
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -635,11 +695,47 @@ function App({ isActive = true }: AppProps): JSX.Element {
       const data: RecommendationResponse = await response.json()
       setResults(data)
       setAppliedLimit(resultLimit)
+      void fetchRagOverview(trimmedQuery, resultLimit, searchMethod)
     } catch (requestError) {
       setResults(EMPTY_RESULTS)
       setError(requestError instanceof Error ? requestError.message : 'Search failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const refineCardDetails = async (suggestionKey: string, suggestion: FlowerSuggestion): Promise<void> => {
+    const trimmedQuery = results.query.trim()
+    if (!trimmedQuery || refiningCards[suggestionKey]) return
+
+    setRefiningCards((currentState) => ({ ...currentState, [suggestionKey]: true }))
+    setError('')
+
+    try {
+      const response = await fetch('/api/rag-card-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: trimmedQuery, suggestion }),
+      })
+      if (!response.ok) {
+        throw new Error(`RAG refinement failed with status ${response.status}`)
+      }
+
+      const refinedSuggestion: Partial<FlowerSuggestion> = await response.json()
+      setResults((currentResults) => ({
+        ...currentResults,
+        suggestions: currentResults.suggestions.map((currentSuggestion) => {
+          const currentKey = `${currentSuggestion.name}-${currentSuggestion.scientific_name}`
+          return currentKey === suggestionKey
+            ? { ...currentSuggestion, ...refinedSuggestion }
+            : currentSuggestion
+        }),
+      }))
+      setFlippedCards((currentState) => ({ ...currentState, [suggestionKey]: true }))
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'RAG refinement failed')
+    } finally {
+      setRefiningCards((currentState) => ({ ...currentState, [suggestionKey]: false }))
     }
   }
 
@@ -888,7 +984,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
             <section className="analysis-stage-panel">
               <div className="analysis-stage-copy">
                 <p className="analysis-stage-title">Thinking...</p>
-                <p>I'm reviewing the retrieved flowers, weighing the strongest matches, and preparing a short, grounded overview.</p>
+                <p>I'm searching the flower index and ranking the strongest raw matches.</p>
               </div>
               <div className="analysis-step-grid">
                 <div><strong>1.</strong> Understand intent</div>
@@ -898,14 +994,25 @@ function App({ isActive = true }: AppProps): JSX.Element {
             </section>
           )}
 
-          {results.rag?.answer && !loading && (
+          {(results.rag?.answer || ragOverviewLoading) && !loading && (
             <section className="ai-overview-section">
               <div className="ai-overview-head">
                 <h2 className="ai-overview-title">AI Overview</h2>
-                <span className="ai-overview-source">{results.rag.answer_source === 'llm' ? 'RAG' : 'Local fallback'}</span>
+                <span className="ai-overview-source">
+                  {ragOverviewLoading && !results.rag?.answer
+                    ? 'Generating'
+                    : isRagTyping
+                      ? 'Writing'
+                    : results.rag?.answer_source === 'llm'
+                      ? 'RAG'
+                      : 'Local fallback'}
+                </span>
               </div>
-              <p className="ai-overview-text">{results.rag.answer}</p>
-              {results.rag.retrieval_query && results.rag.retrieval_query !== results.query && (
+              <p className="ai-overview-text">
+                {ragAnswer ? displayedRagAnswer : 'Generating a grounded RAG overview from the retrieved flower records...'}
+                {isRagTyping && <span className="ai-overview-cursor" aria-hidden="true">|</span>}
+              </p>
+              {results.rag?.retrieval_query && results.rag.retrieval_query !== results.query && (
                 <p className="ai-overview-subtext">
                   Search query: <strong>{results.rag.retrieval_query}</strong>
                 </p>
@@ -923,7 +1030,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 <span className="loading-dot" />
               </div>
               <strong>Ranking flowers</strong>
-              <p>Transforming the query, searching the flower index, and synthesizing recommendations.</p>
+              <p>Searching the flower index and returning raw retrieved details. Refine any card for a RAG explanation.</p>
             </div>
           ) : results.suggestions.length > 0 ? (
             <div className="results-stream">
@@ -955,6 +1062,8 @@ function App({ isActive = true }: AppProps): JSX.Element {
                   expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
                 )
                 const isCardFlipped = Boolean(flippedCards[suggestionKey])
+                const hasRefinedDetails = Boolean(suggestion.rag_summary?.trim() || suggestion.rag_occasion_summary?.trim())
+                const isRefiningCard = Boolean(refiningCards[suggestionKey])
                 const highlightTerms = getHighlightTerms(suggestion.matched_keywords.map((match) => match.keyword))
                 const hasExpandableDetails =
                   Boolean(suggestion.latent_radar_chart) || suggestion.matched_keywords.length > 0
@@ -971,15 +1080,20 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           <button
                             type="button"
                             className="card-flip-toggle"
-                            aria-pressed={isCardFlipped}
-                            onClick={() =>
+                            aria-pressed={hasRefinedDetails && isCardFlipped}
+                            disabled={isRefiningCard}
+                            onClick={() => {
+                              if (!hasRefinedDetails) {
+                                void refineCardDetails(suggestionKey, suggestion)
+                                return
+                              }
                               setFlippedCards((currentState) => ({
                                 ...currentState,
                                 [suggestionKey]: !currentState[suggestionKey],
                               }))
-                            }
+                            }}
                           >
-                            {isCardFlipped ? 'Show raw IR' : 'Show RAG'}
+                            {isRefiningCard ? 'Refining...' : hasRefinedDetails ? (isCardFlipped ? 'Show raw IR' : 'Show refined') : 'Refine details'}
                           </button>
                         </div>
                         <div className="card-header">
