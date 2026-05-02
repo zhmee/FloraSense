@@ -8,8 +8,6 @@ import json
 import logging
 import os
 import re
-import copy
-import threading
 import time
 from functools import lru_cache
 from importlib.machinery import SourceFileLoader
@@ -27,11 +25,6 @@ USE_LLM = True
 logger = logging.getLogger(__name__)
 
 VISUALIZATION_DIR = Path(__file__).resolve().parent / "3d_visualization"
-try:
-    LLM_MAX_CONCURRENCY = max(1, int(os.getenv("FLORASENSE_MAX_LLM_CONCURRENCY", "2")))
-except ValueError:
-    LLM_MAX_CONCURRENCY = 2
-_LLM_SEMAPHORE = threading.BoundedSemaphore(LLM_MAX_CONCURRENCY)
 
 
 def json_search(query):
@@ -147,17 +140,6 @@ def _recommend_with_fallback(query: str, limit: int, method: str, use_llm_explan
             _normalize_recommendation_payload(payload, query),
             use_llm=use_llm_explanations,
         )
-
-
-@lru_cache(maxsize=256)
-def _cached_recommend_with_fallback(query: str, limit: int, method: str, use_llm_explanations: bool = False) -> dict:
-    return _recommend_with_fallback(query, limit, method, use_llm_explanations)
-
-
-def _recommend_with_fallback_copy(query: str, limit: int, method: str, use_llm_explanations: bool = False) -> dict:
-    return copy.deepcopy(
-        _cached_recommend_with_fallback(query, limit, method, use_llm_explanations)
-    )
 
 
 def _llm_client():
@@ -855,144 +837,18 @@ def _generate_rag_response(
 
     return answer, card_summaries
 
-
-def _generate_rag_overview_response(
-    client,
-    user_query: str,
-    retrieval_query: str,
-    context_documents: list[dict],
-) -> str:
-    if not context_documents:
-        return "I could not find matching flower records to ground an answer."
-
-    context_markdown = _format_flower_rag_context(context_documents[:3])
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You write only the short overview for a flower recommendation result. "
-                "Use only the retrieved flower records. Do not invent meanings, colors, "
-                "occasions, or care details. Compare the strongest one or two flowers and "
-                "explain why they fit the user's request. Return plain text only, 2 sentences, "
-                "about 45 to 60 words. Do not mention RAG, IR, vectors, retrieval, database, "
-                "matched keywords, score, or context."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Original user query:\n{user_query}\n\n"
-                f"Search query sent to the flower system:\n{retrieval_query}\n\n"
-                f"Retrieved flower records:\n\n{context_markdown}"
-            ),
-        },
-    ]
-
-    try:
-        return _llm_text_response(client, messages)
-    except Exception:
-        logger.exception("LLM RAG overview generation failed.")
-        return ""
-
-
-def _context_document_from_suggestion(suggestion: dict, rank: int = 1) -> dict:
-    return {
-        "rank": rank,
-        "name": suggestion.get("name", ""),
-        "scientific_name": suggestion.get("scientific_name", ""),
-        "score": suggestion.get("score"),
-        "non_rag_explanation": suggestion.get("query_fit_explanation", ""),
-        "non_rag_occasion_summary": suggestion.get("query_fit_occasion_summary", ""),
-        "has_occasion_evidence": bool(
-            suggestion.get("query_fit_occasion_summary")
-            or suggestion.get("occasions")
-        ),
-        "colors": _compact_context_values(suggestion.get("colors"), 5),
-        "maintenance": _compact_context_values(suggestion.get("maintenance"), 2),
-        "plant_types": _compact_context_values(suggestion.get("plant_types"), 3),
-        "meanings": _compact_context_values(suggestion.get("meanings"), 5),
-        "occasions": _compact_context_values(suggestion.get("occasions"), 5),
-        "matched_keywords": [
-            {
-                "keyword": match.get("keyword", ""),
-                "category": match.get("category", ""),
-            }
-            for match in (suggestion.get("matched_keywords") or [])[:8]
-            if isinstance(match, dict)
-        ],
-    }
-
-
-def _generate_rag_card_response(client, user_query: str, document: dict) -> dict[str, str]:
-    context_markdown = _format_flower_rag_context([document])
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You write one refined flower recommendation card. Use only the retrieved "
-                "flower record below. Do not invent meanings, colors, occasions, or care "
-                "details. Return JSON only with this exact shape: "
-                "{\"rag_summary\":\"2 concise sentences explaining why this flower fits\","
-                "\"rag_occasion_summary\":\"one concise occasion sentence or empty string\","
-                "\"ir_summary\":\"at most 2 sentences summarizing the meaning data\"}. "
-                "Do not mention RAG, IR, vectors, retrieval, database, matched keywords, "
-                "score, or context."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Original user query:\n{user_query}\n\n"
-                f"Retrieved flower record:\n\n{context_markdown}"
-            ),
-        },
-    ]
-
-    try:
-        content = _llm_text_response(client, messages)
-    except Exception:
-        logger.exception("LLM RAG card generation failed.")
-        return {}
-
-    parsed = _extract_json_object(content)
-    return {
-        "rag_summary": str(parsed.get("rag_summary") or "").strip(),
-        "rag_occasion_summary": str(parsed.get("rag_occasion_summary") or "").strip(),
-        "ir_summary": str(parsed.get("ir_summary") or "").strip(),
-    }
-
-
-_RETRIEVAL_QUERY_CACHE: dict[str, tuple[str, list[str], str, str]] = {}
-_RETRIEVAL_QUERY_CACHE_LOCK = threading.Lock()
-
-
+@lru_cache(maxsize=256)
 def _cached_retrieval_query(query: str):
-    with _RETRIEVAL_QUERY_CACHE_LOCK:
-        cached = _RETRIEVAL_QUERY_CACHE.get(query)
-    if cached is not None:
-        return cached
-
     client, reason = _llm_client()
     if client is None:
         return query, [], reason, "local"
-    if not _LLM_SEMAPHORE.acquire(blocking=False):
-        return query, [], "LLM workers are busy; using the original query.", "local"
-    try:
-        result = _llm_retrieval_query(client, query)
-        if result[3] == "llm":
-            with _RETRIEVAL_QUERY_CACHE_LOCK:
-                if len(_RETRIEVAL_QUERY_CACHE) >= 256:
-                    _RETRIEVAL_QUERY_CACHE.pop(next(iter(_RETRIEVAL_QUERY_CACHE)))
-                _RETRIEVAL_QUERY_CACHE[query] = result
-        return result
-    finally:
-        _LLM_SEMAPHORE.release()
+    return _llm_retrieval_query(client, query)
 
 def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     client, unavailable_reason = _llm_client()
     retrieval_query, exclude_terms, transform_rationale, transform_source = _cached_retrieval_query(query)
 
-    payload = _recommend_with_fallback_copy(
+    payload = _recommend_with_fallback(
         retrieval_query,
         limit,
         method,
@@ -1018,18 +874,13 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     answer_source = "llm"
     card_summary_source = "llm"
     if client is not None:
-        if _LLM_SEMAPHORE.acquire(blocking=False):
-            try:
-                answer, card_summaries = _generate_rag_response(
-                    client,
-                    query,
-                    retrieval_query,
-                    context_documents,
-                )
-            finally:
-                _LLM_SEMAPHORE.release()
-        else:
-            logger.info("Skipping LLM answer generation because all LLM workers are busy.")
+        #time.sleep(1.0)
+        answer, card_summaries = _generate_rag_response(
+            client,
+            query,
+            retrieval_query,
+            context_documents,
+        )
 
     if not answer:
         answer_source = "local"
@@ -1090,92 +941,6 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
     return payload
 
 
-def _rag_overview(query: str, limit: int, method: str) -> dict:
-    client, unavailable_reason = _llm_client()
-    retrieval_query = query
-    payload = _recommend_with_fallback_copy(
-        retrieval_query,
-        limit,
-        method,
-        use_llm_explanations=False,
-    )
-    payload["query"] = query
-    context_documents = _build_rag_context_documents(payload, limit=min(limit, 3))
-
-    answer = ""
-    answer_source = "llm"
-    if client is not None:
-        if _LLM_SEMAPHORE.acquire(blocking=False):
-            try:
-                answer = _generate_rag_overview_response(
-                    client,
-                    query,
-                    retrieval_query,
-                    context_documents,
-                )
-            finally:
-                _LLM_SEMAPHORE.release()
-        else:
-            logger.info("Skipping LLM overview because all LLM workers are busy.")
-    else:
-        logger.info("Using local overview fallback: %s", unavailable_reason)
-
-    if not answer:
-        answer_source = "local"
-        answer = _fallback_rag_answer(query, context_documents)
-
-    return {
-        "query": query,
-        "rag": {
-            "user_query": query,
-            "retrieval_query": retrieval_query,
-            "query_transform_source": "local",
-            "query_transform_rationale": "Overview uses the raw query for speed.",
-            "answer": answer,
-            "answer_source": answer_source,
-            "context_documents": context_documents,
-        },
-    }
-
-
-def _rag_card_summary(query: str, suggestion: dict) -> dict:
-    client, unavailable_reason = _llm_client()
-    document = _context_document_from_suggestion(suggestion)
-
-    card_text = {}
-    card_summary_source = "llm"
-    if client is not None:
-        if _LLM_SEMAPHORE.acquire(blocking=False):
-            try:
-                card_text = _generate_rag_card_response(client, query, document)
-            finally:
-                _LLM_SEMAPHORE.release()
-        else:
-            logger.info("Skipping LLM card refinement because all LLM workers are busy.")
-    else:
-        logger.info("Using local card refinement fallback: %s", unavailable_reason)
-
-    if not any(card_text.values()):
-        card_summary_source = "local"
-        data_summary = _local_data_summary(document)
-        card_text = {
-            "ir_summary": data_summary,
-            "rag_summary": _local_card_summary(query, document),
-            "rag_occasion_summary": suggestion.get("query_fit_occasion_summary", ""),
-        }
-
-    return {
-        "name": suggestion.get("name", ""),
-        "scientific_name": suggestion.get("scientific_name", ""),
-        "ir_summary": card_text.get("ir_summary", "") or _local_data_summary(document),
-        "ir_summary_source": card_summary_source if card_text.get("ir_summary") else "local",
-        "rag_summary": card_text.get("rag_summary", "") or _local_card_summary(query, document),
-        "rag_occasion_summary": card_text.get("rag_occasion_summary", ""),
-        "rag_source": card_summary_source if card_text.get("rag_summary") else "local",
-        "rag_occasion_source": card_summary_source if card_text.get("rag_occasion_summary") else "",
-    }
-
-
 @lru_cache(maxsize=1)
 def _load_visualizer_insight_modules():
     return {
@@ -1188,31 +953,6 @@ def _load_visualizer_insight_modules():
             VISUALIZATION_DIR / "recommendation_calculation",
         ),
     }
-
-
-@lru_cache(maxsize=16)
-def _cached_visualizer_flowers(limit: int) -> dict:
-    modules = _load_search_modules()
-    return modules["visualizer_flowers"](limit=limit)
-
-
-@lru_cache(maxsize=256)
-def _cached_visualizer_bouquet_insights(scientific_names: tuple[str, ...]) -> dict:
-    modules = _load_visualizer_insight_modules()
-    names = list(scientific_names)
-    meanings_payload = modules["health"].get_bouquet_meanings(names)
-    recommendations_payload = modules["recommendations"].get_bouquet_recommendations(names)
-    return {
-        "scientific_names": names,
-        "meanings": meanings_payload.get("meanings", []),
-        "recommendations": recommendations_payload.get("recommendations", []),
-    }
-
-
-def warm_route_caches() -> None:
-    _load_search_modules()
-    _recommend_with_fallback_copy("love", 5, "svd")
-    _cached_visualizer_flowers(96)
 
 
 def register_routes(app):
@@ -1243,7 +983,7 @@ def register_routes(app):
         method = request.args.get("method", "svd") # SVD or TF-IDF # TODO: IMPLEMENT 
         limit = request.args.get("limit", default=5, type=int)
         limit = max(1, min(limit, 20))
-        return jsonify(_recommend_with_fallback_copy(query, limit, method))
+        return jsonify(_recommend_with_fallback(query, limit, method))
 
     @app.route("/api/rag-recommendations")
     def rag_recommendations():
@@ -1252,35 +992,14 @@ def register_routes(app):
         limit = request.args.get("limit", default=5, type=int)
         limit = max(1, min(limit, 20))
         if not query or not query.strip():
-            return jsonify(_recommend_with_fallback_copy(query, limit, method))
+            return jsonify(_recommend_with_fallback(query, limit, method))
         return jsonify(_rag_recommendations(query, limit, method))
-
-    @app.route("/api/rag-overview")
-    def rag_overview():
-        query = request.args.get("q", "")
-        method = request.args.get("method", "svd")
-        limit = request.args.get("limit", default=5, type=int)
-        limit = max(1, min(limit, 20))
-        if not query or not query.strip():
-            return jsonify({"query": query, "rag": None})
-        return jsonify(_rag_overview(query, limit, method))
-
-    @app.route("/api/rag-card-summary", methods=["POST"])
-    def rag_card_summary():
-        payload = request.get_json(silent=True) or {}
-        query = str(payload.get("query") or "").strip()
-        suggestion = payload.get("suggestion") or {}
-        if not query:
-            return jsonify({"error": "query is required."}), 400
-        if not isinstance(suggestion, dict) or not suggestion.get("name"):
-            return jsonify({"error": "suggestion is required."}), 400
-        return jsonify(_rag_card_summary(query, suggestion))
 
     @app.route("/api/visualizer-flowers")
     def visualizer():
         limit = request.args.get("limit", default=48, type=int)
-        limit = max(1, min(limit, 128))
-        return jsonify(copy.deepcopy(_cached_visualizer_flowers(limit)))
+        modules = _load_search_modules()
+        return jsonify(modules["visualizer_flowers"](limit=limit))
 
     @app.route("/api/flower-images/<path:filename>")
     def flower_image(filename):
@@ -1305,7 +1024,14 @@ def register_routes(app):
                 "recommendations": [],
             })
 
-        return jsonify(copy.deepcopy(_cached_visualizer_bouquet_insights(tuple(cleaned_names))))
+        modules = _load_visualizer_insight_modules()
+        meanings_payload = modules["health"].get_bouquet_meanings(cleaned_names)
+        recommendations_payload = modules["recommendations"].get_bouquet_recommendations(cleaned_names)
+        return jsonify({
+            "scientific_names": cleaned_names,
+            "meanings": meanings_payload.get("meanings", []),
+            "recommendations": recommendations_payload.get("recommendations", []),
+        })
 
     @app.route("/api/autocomplete")
     def autocomplete():
