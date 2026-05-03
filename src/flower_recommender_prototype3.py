@@ -1990,11 +1990,11 @@ def _load_csv_records() -> list[dict]:
             # `planttype` may contain multiple comma-separated values
             entry["plant_types"].extend(_split_csv_cell(row.get("planttype", "")))
 
-            preprocessed_text = _preprocessed_text_for_row(row)
-            entry["meanings"].extend(preprocessed_text["meanings"])
-            entry["occasions"].extend(preprocessed_text["occasions"])
-            entry["ir_summaries"].extend(preprocessed_text["meanings"])
-            entry["occasion_summaries"].extend(preprocessed_text["occasions"])
+            # raw columns only -- preprocessed file must not affect retrieval
+            if row.get("meaning", "").strip():
+                entry["meanings"].append(row["meaning"].strip())
+            if row.get("Special Occasions", "").strip():
+                entry["occasions"].append(row["Special Occasions"].strip())
 
     return [
         # final deduped record for each flower (bc i had nearly 10 duplicates for one flower like holy moly)
@@ -2006,12 +2006,11 @@ def _load_csv_records() -> list[dict]:
             "maintenance": _dedupe_preserve_order(entry["maintenance"]),
             "meanings": _dedupe_preserve_order(entry["meanings"]),
             "occasions": _dedupe_preserve_order(entry["occasions"]),
-            "ir_summaries": _dedupe_preserve_order(entry["ir_summaries"]),
-            "occasion_summaries": _dedupe_preserve_order(entry["occasion_summaries"]),
+            "ir_summaries": [],
+            "occasion_summaries": [],
         }
         for entry in grouped.values()
     ]
-
 
 def _is_thematic_file(path: Path) -> bool:
     """
@@ -2363,7 +2362,6 @@ def _build_suggestion(
     flower: dict,
     query: str,
     similarity: float,
-    #top_score: float,
     query_lsa_vector: np.ndarray,
     flower_lsa_vector: np.ndarray,
     query_word_matrix,
@@ -2397,8 +2395,11 @@ def _build_suggestion(
         if matched_term["category"] == "semantic":
             matched_term["category"] = _keyword_category_for_flower(matched_term["keyword"], flower)
     matched_terms = _merge_keyword_lists([matched_terms], MAX_MATCHED_KEYWORDS)
-    displayed_meanings = _select_display_texts(flower["meanings"], query, 2)
-    displayed_occasions = _select_display_texts(flower["occasions"], query, 2)
+
+    # preprocessed file is only for display -- never for retrieval
+    display_text = _preprocessed_text_for_row(flower)
+    displayed_meanings = _select_display_texts(display_text["meanings"], query, 5)
+    displayed_occasions = _select_display_texts(display_text["occasions"], query, 5)
     ir_summary = " ".join(displayed_meanings).strip()
     occasion_summary = " ".join(displayed_occasions).strip()
 
@@ -2438,7 +2439,6 @@ def _build_suggestion(
         "latent_radar_axes": [] if radar_chart is None else radar_chart["axis_labels"],
         "image_url": flower.get("image_url"),
     }
-
 
 # ADDED THIS BECAUSE I PLAN TO REUSE THE LOGIC HERE FOR MY BACKEND FOR THE 3D VISUALIZATION
 def get_flower_vectors(scientific_names: list[str]) -> dict:

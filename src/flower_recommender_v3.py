@@ -351,9 +351,10 @@ def _load_model() -> tuple:
             for pt in _split_csv_cell(row.get("planttype", "")):
                 e["plant_types"].add(pt)
 
-            preprocessed_text = _preprocessed_text_for_row(row)
-            e["meanings"].update(preprocessed_text["meanings"])
-            e["occasions"].update(preprocessed_text["occasions"])
+            if row.get("meaning", "").strip():
+                e["meanings"].add(row["meaning"].strip())
+            if row.get("Special Occasions", "").strip():
+                e["occasions"].add(row["Special Occasions"].strip())
 
     # Convert sets -> sorted lists for deterministic output
     flowers = [
@@ -658,7 +659,7 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
         matched = _extract_matched_keywords(
             flower, query_tfidf, td_matrix[idx], vectorizer, stem_to_word
         )
-
+        display_text = _preprocessed_text_for_row(flower)
         suggestions.append({
             "name": flower["name"],
             "scientific_name": flower["scientific_name"],
@@ -667,9 +668,9 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
             "maintenance": flower["maintenance"],
             "meanings": flower["meanings"],
             "occasions": flower["occasions"],
-            "ir_summary": " ".join(flower["meanings"][:2]).strip(),
+            "ir_summary": " ".join(display_text["meanings"][:5]).strip(),
             "ir_summary_source": "csv" if flower["meanings"] else "",
-            "query_fit_occasion_summary": " ".join(flower["occasions"][:2]).strip(),
+            "query_fit_occasion_summary": " ".join(display_text["occasions"][:2]).strip(),
             "occasion_summary_source": "csv" if flower["occasions"] else "",
             "image_url": resolve_flower_image_url(flower),
             "score": final_score,
