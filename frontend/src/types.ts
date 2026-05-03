@@ -24,14 +24,13 @@ export interface FlowerSuggestion {
   query_fit_explanation?: string
   query_fit_occasion_summary?: string
   ir_summary?: string
-  ir_summary_source?: 'llm' | 'local' | ''
-  ir_occasion_summary?: string
+  ir_summary_source?: 'llm' | 'local' | 'csv' | ''
   rag_summary?: string
   rag_occasion_summary?: string
   rag_source?: 'llm' | 'local' | ''
   rag_occasion_source?: 'llm' | 'local' | ''
   explanation_source?: 'llm' | 'local'
-  occasion_summary_source?: 'llm' | 'local' | ''
+  occasion_summary_source?: 'llm' | 'local' | 'csv' | ''
   matched_keywords: MatchedKeyword[]
   latent_radar_chart: string | null
   latent_radar_axes: string[]
@@ -60,7 +59,7 @@ export interface RagResponse {
   query_transform_source: 'llm' | 'local'
   query_transform_rationale: string
   answer: string
-  answer_source: 'llm' | 'local'
+  answer_source: 'llm' | 'local' | ''
   context_documents: RagContextDocument[]
 }
 

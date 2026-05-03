@@ -1,7 +1,7 @@
 """
 FloraSense retrieval: inverted index, TF-IDF, and Rocchio feedback.
-Dataset: merged.csv  (name, scientific_name, color, planttype,
-                       maintenance, meaning, Special Occasions)
+Dataset: merged.csv for metadata and merged_preprocessed_meanings.csv for
+         preprocessed meaning/occasion card text.
 
 IR concepts applied
 -------------------
@@ -41,6 +41,7 @@ from utils import resolve_flower_image_url, split_meaning_cell
 # ---------------------------------------------------------------------------
 
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
+PREPROCESSED_MEANINGS_FILE = Path(__file__).resolve().parent / "data" / "merged_preprocessed_meanings.csv"
 
 # Token repetition per field: raises raw TF so TF-IDF weights that field more.
 FIELD_REPEAT = {
@@ -142,6 +143,56 @@ def _split_meanings(value: str) -> list:
     Split meaning entries separated by semicolons.
     """
     return split_meaning_cell(value)
+
+
+def _dedupe_sorted(values) -> list[str]:
+    return sorted({value.strip() for value in values if value and value.strip()})
+
+
+def _preprocessed_lookup_key(name: str, color: str = "") -> str:
+    return f"{_normalize(name)}::{_normalize(color)}"
+
+
+@lru_cache(maxsize=1)
+def _load_preprocessed_meaning_texts() -> dict[str, dict[str, list[str]]]:
+    summaries: dict[str, dict[str, list[str]]] = defaultdict(
+        lambda: {"meanings": [], "occasions": []}
+    )
+    if not PREPROCESSED_MEANINGS_FILE.exists():
+        return {}
+
+    with PREPROCESSED_MEANINGS_FILE.open(encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            name = (row.get("name") or "").strip()
+            color = (row.get("color") or "").strip()
+            if not name:
+                continue
+            meaning = (row.get("ir_summary") or "").strip()
+            occasion = (row.get("occasions_summary") or "").strip()
+            for key in (_preprocessed_lookup_key(name, color), _preprocessed_lookup_key(name)):
+                if meaning:
+                    summaries[key]["meanings"].append(meaning)
+                if occasion:
+                    summaries[key]["occasions"].append(occasion)
+
+    return {
+        key: {
+            "meanings": _dedupe_sorted(value["meanings"]),
+            "occasions": _dedupe_sorted(value["occasions"]),
+        }
+        for key, value in summaries.items()
+    }
+
+
+def _preprocessed_text_for_row(row: dict) -> dict[str, list[str]]:
+    lookup = _load_preprocessed_meaning_texts()
+    name = (row.get("name") or "").strip()
+    color = (row.get("color") or "").strip()
+    return (
+        lookup.get(_preprocessed_lookup_key(name, color))
+        or lookup.get(_preprocessed_lookup_key(name))
+        or {"meanings": [], "occasions": []}
+    )
 
 
 def _plant_type_aliases(value: str) -> set:
@@ -300,13 +351,9 @@ def _load_model() -> tuple:
             for pt in _split_csv_cell(row.get("planttype", "")):
                 e["plant_types"].add(pt)
 
-            raw_meaning = row.get("meaning", "")
-            for m in _split_meanings(raw_meaning):
-                e["meanings"].add(m)
-
-            occ = row.get("Special Occasions", "").strip()
-            if occ:
-                e["occasions"].add(occ)
+            preprocessed_text = _preprocessed_text_for_row(row)
+            e["meanings"].update(preprocessed_text["meanings"])
+            e["occasions"].update(preprocessed_text["occasions"])
 
     # Convert sets -> sorted lists for deterministic output
     flowers = [
@@ -620,6 +667,10 @@ def recommend_flowers_tfidf(query: str, limit: int = 5) -> dict:
             "maintenance": flower["maintenance"],
             "meanings": flower["meanings"],
             "occasions": flower["occasions"],
+            "ir_summary": " ".join(flower["meanings"][:2]).strip(),
+            "ir_summary_source": "csv" if flower["meanings"] else "",
+            "query_fit_occasion_summary": " ".join(flower["occasions"][:2]).strip(),
+            "occasion_summary_source": "csv" if flower["occasions"] else "",
             "image_url": resolve_flower_image_url(flower),
             "score": final_score,
             "matched_keywords": matched,

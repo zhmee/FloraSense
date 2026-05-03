@@ -5,8 +5,8 @@ This file builds one text document for each flower, turns those documents into
 numeric vectors, reduces them with SVD, and then finds the flowers whose vectors
 are closest to the user's query.
 
-`merged.csv` is the primary source of flower records. Scraped flower pages are
-used only to add article text when they can be matched to a cleaned CSV flower.
+`merged.csv` is the primary source of flower metadata. Preprocessed meaning and
+occasion text comes from `merged_preprocessed_meanings.csv`.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from utils import is_thematic_slug, resolve_flower_image_url, split_meaning_cell
 
 # the file locations
 DATA_FILE = Path(__file__).resolve().parent / "data" / "merged.csv"
+PREPROCESSED_MEANINGS_FILE = Path(__file__).resolve().parent / "data" / "merged_preprocessed_meanings.csv"
 TEXT_CORPUS_DIR = Path(__file__).resolve().parent.parent / "data_scraping" / "flower_texts"
 SYNONYM_FILE = Path(__file__).resolve().parent / "data" / "synonyms.csv"
 
@@ -441,6 +442,62 @@ def _split_csv_cell(value: str) -> list[str]:
     return [part.strip() for part in (value or "").split(",") if part.strip()]
 
 
+def _preprocessed_lookup_key(name: str, color: str = "") -> str:
+    return f"{_normalize(name)}::{_normalize(color)}"
+
+
+@lru_cache(maxsize=1)
+def _load_preprocessed_meaning_texts() -> dict[str, dict[str, list[str]]]:
+    """
+    Load the already rewritten meaning and occasion summaries. These values are
+    display text now; the app should not regenerate or fall back to scraped
+    prose for card meaning/occasion copy.
+    """
+    summaries: dict[str, dict[str, list[str]]] = defaultdict(
+        lambda: {"meanings": [], "occasions": []}
+    )
+    if not PREPROCESSED_MEANINGS_FILE.exists():
+        return {}
+
+    with PREPROCESSED_MEANINGS_FILE.open(encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            name = (row.get("name") or "").strip()
+            color = (row.get("color") or "").strip()
+            if not name:
+                continue
+
+            meaning = (row.get("ir_summary") or "").strip()
+            occasion = (row.get("occasions_summary") or "").strip()
+            for key in (
+                _preprocessed_lookup_key(name, color),
+                _preprocessed_lookup_key(name),
+            ):
+                if meaning:
+                    summaries[key]["meanings"].append(meaning)
+                if occasion:
+                    summaries[key]["occasions"].append(occasion)
+
+    return {
+        key: {
+            "meanings": _dedupe_preserve_order(value["meanings"]),
+            "occasions": _dedupe_preserve_order(value["occasions"]),
+        }
+        for key, value in summaries.items()
+    }
+
+
+def _preprocessed_text_for_row(row: dict) -> dict[str, list[str]]:
+    lookup = _load_preprocessed_meaning_texts()
+    name = (row.get("name") or "").strip()
+    color = (row.get("color") or "").strip()
+    return (
+        lookup.get(_preprocessed_lookup_key(name, color))
+        or lookup.get(_preprocessed_lookup_key(name))
+        or {"meanings": [], "occasions": []}
+    )
+
+
 def _split_meaning_chunks(value: str) -> list[str]:
     """Delegates to utils.split_meaning_cell."""
     return split_meaning_cell(value)
@@ -608,6 +665,8 @@ def _new_flower_doc(name: str, scientific_name: str = "Unknown") -> dict:
         "maintenance": [],
         "meanings": [],
         "occasions": [],
+        "ir_summaries": [],
+        "occasion_summaries": [],
         "aliases": _alias_variants(display_name),
         "article_passages": [],
     }
@@ -712,6 +771,10 @@ def _merge_structured_record(doc: dict, record: dict) -> None:
     doc["maintenance"] = _dedupe_preserve_order(doc["maintenance"] + record["maintenance"])
     doc["meanings"] = _dedupe_preserve_order(doc["meanings"] + record["meanings"])
     doc["occasions"] = _dedupe_preserve_order(doc["occasions"] + record["occasions"])
+    doc["ir_summaries"] = _dedupe_preserve_order(doc["ir_summaries"] + record["ir_summaries"])
+    doc["occasion_summaries"] = _dedupe_preserve_order(
+        doc["occasion_summaries"] + record["occasion_summaries"]
+    )
     # you get an alias you get an alias everyone gets an alias (adding more names that can refer to this flower)
     doc["aliases"].update(_alias_variants(record["name"]))
     if record["scientific_name"] != "Unknown":
@@ -1914,6 +1977,8 @@ def _load_csv_records() -> list[dict]:
                     "maintenance": [],
                     "meanings": [],
                     "occasions": [],
+                    "ir_summaries": [],
+                    "occasion_summaries": [],
                 },
             )
 
@@ -1925,13 +1990,11 @@ def _load_csv_records() -> list[dict]:
             # `planttype` may contain multiple comma-separated values
             entry["plant_types"].extend(_split_csv_cell(row.get("planttype", "")))
 
-            meaning_value = (row.get("meaning") or "").strip()
-            if meaning_value:
-                entry["meanings"].append(meaning_value)
-
-            occasion_value = (row.get("Special Occasions") or "").strip()
-            if occasion_value:
-                entry["occasions"].append(occasion_value)
+            preprocessed_text = _preprocessed_text_for_row(row)
+            entry["meanings"].extend(preprocessed_text["meanings"])
+            entry["occasions"].extend(preprocessed_text["occasions"])
+            entry["ir_summaries"].extend(preprocessed_text["meanings"])
+            entry["occasion_summaries"].extend(preprocessed_text["occasions"])
 
     return [
         # final deduped record for each flower (bc i had nearly 10 duplicates for one flower like holy moly)
@@ -1943,6 +2006,8 @@ def _load_csv_records() -> list[dict]:
             "maintenance": _dedupe_preserve_order(entry["maintenance"]),
             "meanings": _dedupe_preserve_order(entry["meanings"]),
             "occasions": _dedupe_preserve_order(entry["occasions"]),
+            "ir_summaries": _dedupe_preserve_order(entry["ir_summaries"]),
+            "occasion_summaries": _dedupe_preserve_order(entry["occasion_summaries"]),
         }
         for entry in grouped.values()
     ]
@@ -2334,12 +2399,8 @@ def _build_suggestion(
     matched_terms = _merge_keyword_lists([matched_terms], MAX_MATCHED_KEYWORDS)
     displayed_meanings = _select_display_texts(flower["meanings"], query, 2)
     displayed_occasions = _select_display_texts(flower["occasions"], query, 2)
-
-    if not displayed_meanings and not displayed_occasions:
-        # if short metadata is missing, use passages as fallback explanation text
-        highlights = _top_passages(query, flower["passages"], word_vectorizer, char_vectorizer, svd)
-        displayed_meanings = highlights[:2]
-        displayed_occasions = highlights[2:]
+    ir_summary = " ".join(displayed_meanings).strip()
+    occasion_summary = " ".join(displayed_occasions).strip()
 
     radar_chart = None
     if len(query_axis_labels) >= 3:
@@ -2366,6 +2427,10 @@ def _build_suggestion(
         "maintenance": _format_maintenance_values(flower["maintenance"]),
         "meanings": displayed_meanings,
         "occasions": displayed_occasions,
+        "ir_summary": ir_summary,
+        "ir_summary_source": "csv" if ir_summary else "",
+        "query_fit_occasion_summary": occasion_summary,
+        "occasion_summary_source": "csv" if occasion_summary else "",
         # this score is NOT relative to the best result for the same query anymore!
         "score": round(similarity * 100, 2),
         "matched_keywords": matched_terms,

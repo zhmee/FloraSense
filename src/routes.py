@@ -285,56 +285,6 @@ QUERY_STOPWORDS = {
     "wouldnt",
     "who",
 }
-MEANING_INTENT_TOKENS = {
-    "courage",
-    "friendship",
-    "gratitude",
-    "hope",
-    "love",
-    "meaning",
-    "means",
-    "remembrance",
-    "represent",
-    "represents",
-    "romantic",
-    "romance",
-    "strength",
-    "symbol",
-    "symbolic",
-    "symbolism",
-    "symbolize",
-    "symbolizes",
-    "thanks",
-    "thank",
-}
-NEGATIVE_LOVE_MEANING_PATTERNS = (
-    "decrease of love",
-    "fading love",
-    "lost love",
-    "love denied",
-    "rejected love",
-    "unrequited love",
-    "infidelity",
-    "betrayal",
-)
-
-
-def _query_has_symbolic_intent(query: str) -> bool:
-    query_tokens = set(re.findall(r"[a-z0-9]+", _rag_name_key(query)))
-    return bool(query_tokens & MEANING_INTENT_TOKENS)
-
-
-def _meaning_value_supports_query_term(term: str, value: str) -> bool:
-    normalized_term = _rag_name_key(term)
-    normalized_value = _rag_name_key(value)
-    if not normalized_term or not normalized_value:
-        return False
-    if any(pattern in normalized_term for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
-        return False
-    if normalized_term == "love" and any(pattern in normalized_value for pattern in NEGATIVE_LOVE_MEANING_PATTERNS):
-        return False
-    return normalized_term == normalized_value or normalized_term in normalized_value or normalized_value in normalized_term
-
 def _llm_retrieval_query(client, user_query: str) -> tuple[str, list[str], str, str]:
     messages = [
         {
@@ -561,189 +511,6 @@ def _format_flower_rag_context(context_documents: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _local_card_summary(user_query: str, document: dict) -> str:
-    name = document.get("name") or "This flower"
-    matched_by_category: dict[str, list[str]] = {}
-    for match in document.get("matched_keywords", []) or []:
-        if not isinstance(match, dict):
-            continue
-        keyword = (match.get("keyword") or "").strip()
-        category = (match.get("category") or "semantic").strip()
-        if not keyword:
-            continue
-        matched_by_category.setdefault(category, [])
-        if keyword not in matched_by_category[category]:
-            matched_by_category[category].append(keyword)
-
-    requested_tokens = [
-        token
-        for token in re.findall(r"[a-z0-9]+", _rag_name_key(user_query))
-        if len(token) >= 4 and token not in QUERY_STOPWORDS and token not in {"flower", "flowers"}
-    ]
-    values_by_field = {
-        "color": document.get("colors", []) or [],
-        "meaning": document.get("meanings", []) or [],
-        "occasion": document.get("occasions", []) or [],
-        "maintenance": document.get("maintenance", []) or [],
-        "plant type": document.get("plant_types", []) or [],
-    }
-    supported = []
-    unsupported = []
-    for token in requested_tokens:
-        if any(token in _rag_name_key(value) for values in values_by_field.values() for value in values):
-            supported.append(token)
-        else:
-            unsupported.append(token)
-
-    reasons = []
-    color_terms = matched_by_category.get("color") or [
-        value for value in document.get("colors", []) if _rag_name_key(value) in requested_tokens
-    ]
-    raw_meaning_terms = matched_by_category.get("meaning", []) if _query_has_symbolic_intent(user_query) else []
-    meaning_terms = [
-        term
-        for term in raw_meaning_terms
-        if any(_meaning_value_supports_query_term(term, value) for value in document.get("meanings", []) or [])
-    ]
-    occasion_terms = matched_by_category.get("occasion", [])
-    maintenance_terms = matched_by_category.get("maintenance", [])
-    plant_terms = matched_by_category.get("plant_type", [])
-
-    if color_terms:
-        reasons.append(f"is available in {', '.join(color_terms[:2])}")
-    if meaning_terms:
-        reasons.append(f"supports the symbolism of {', '.join(meaning_terms[:2])}")
-    if occasion_terms:
-        reasons.append(f"fits {', '.join(occasion_terms[:2])}")
-    if maintenance_terms:
-        reasons.append(f"matches {', '.join(maintenance_terms[:1])} care")
-    if plant_terms:
-        reasons.append(f"is a {', '.join(plant_terms[:1])}")
-
-    if unsupported and reasons:
-        return (
-            f"{name} is a partial fit for \"{user_query}\": it {', and '.join(reasons[:2])}, "
-            f"but the visible evidence does not clearly support {', '.join(unsupported[:2])}."
-        )
-    if reasons:
-        return (
-            f"{name} fits \"{user_query}\" because it {', and '.join(reasons[:3])}."
-        )
-
-    existing_explanation = (document.get("non_rag_explanation") or "").strip()
-    if existing_explanation:
-        return existing_explanation
-
-    return f"{name} has limited support for \"{user_query}\" because the retrieved record has sparse descriptive evidence."
-
-
-def _local_data_summary(document: dict) -> str:
-    meanings = _compact_context_values(document.get("meanings"), 2)
-    occasions = _compact_context_values(document.get("occasions"), 2)
-    parts = []
-    if meanings:
-        parts.append(f"Meanings: {'; '.join(meanings)}")
-    if occasions:
-        parts.append(f"Occasions: {'; '.join(occasions)}")
-    if parts:
-        return " ".join(parts)
-
-    name = document.get("name") or "This flower"
-    return f"{name} does not have meaning or occasion text listed in the flower data."
-
-
-def _fallback_card_summaries(user_query: str, context_documents: list[dict]) -> dict[str, dict[str, str]]:
-    summaries = {}
-    for document in context_documents:
-        name = document.get("name")
-        if not name:
-            continue
-        data_summary = _local_data_summary(document)
-        summaries[_rag_name_key(name)] = {
-            "rag_summary": data_summary,
-            "ir_summary": data_summary,
-            "rag_occasion_summary": "",
-        }
-    return summaries
-
-
-def _join_overview_values(values: list[str]) -> str:
-    values = [value for value in values if value]
-    if not values:
-        return ""
-    if len(values) == 1:
-        return values[0]
-    if len(values) == 2:
-        return f"{values[0]} and {values[1]}"
-    return f"{', '.join(values[:-1])}, and {values[-1]}"
-
-
-def _overview_reason_phrase(document: dict, user_query: str) -> str:
-    matched_by_category: dict[str, list[str]] = {}
-    for match in document.get("matched_keywords", []) or []:
-        if not isinstance(match, dict):
-            continue
-        keyword = " ".join(str(match.get("keyword") or "").split())
-        category = " ".join(str(match.get("category") or "").split())
-        if keyword and category:
-            matched_by_category.setdefault(category, [])
-            if keyword not in matched_by_category[category]:
-                matched_by_category[category].append(keyword)
-
-    reasons = []
-    meaning_terms = [
-        term
-        for term in (matched_by_category.get("meaning") or [])
-        if any(_meaning_value_supports_query_term(term, value) for value in document.get("meanings", []) or [])
-    ]
-    if _query_has_symbolic_intent(user_query) and meaning_terms:
-        reasons.append(f"its symbolism centers on {_join_overview_values(meaning_terms[:2])}")
-    if matched_by_category.get("occasion"):
-        reasons.append(f"it naturally suits {_join_overview_values(matched_by_category['occasion'][:2])}")
-    if matched_by_category.get("color"):
-        reasons.append(f"it is available in {_join_overview_values(matched_by_category['color'][:2])}")
-    if matched_by_category.get("maintenance"):
-        reasons.append(f"it matches {_join_overview_values(matched_by_category['maintenance'][:1])} care")
-    if matched_by_category.get("plant_type"):
-        reasons.append(f"it is a {_join_overview_values(matched_by_category['plant_type'][:1])}")
-
-    if reasons:
-        return _join_overview_values(reasons[:3])
-
-    meanings = _compact_context_values(document.get("meanings"), 2) if _query_has_symbolic_intent(user_query) else []
-    occasions = _compact_context_values(document.get("occasions"), 1)
-    if meanings and occasions:
-        return f"it offers {_join_overview_values(meanings)} symbolism and fits {occasions[0]}"
-    if meanings:
-        return f"its listed meaning emphasizes {_join_overview_values(meanings)}"
-    if occasions:
-        return f"it is tied to {occasions[0]}"
-    return "the retrieved flower details give it the strongest overall support"
-
-
-def _fallback_rag_answer(user_query: str, context_documents: list[dict]) -> str:
-    if not context_documents:
-        return "No matching flowers were found."
-
-    top_documents = [doc for doc in context_documents[:2] if doc.get("name")]
-    if not top_documents:
-        return "The strongest flower details are shown below."
-
-    first = top_documents[0]
-    first_name = first.get("name")
-    first_reason = _overview_reason_phrase(first, user_query)
-    if len(top_documents) == 1:
-        return f"For \"{user_query}\", {first_name} is the clearest fit because {first_reason}."
-
-    second = top_documents[1]
-    second_name = second.get("name")
-    second_reason = _overview_reason_phrase(second, user_query)
-    return (
-        f"For \"{user_query}\", {first_name} is the most direct fit because {first_reason}. "
-        f"{second_name} is worth considering when you want a slightly different emphasis: {second_reason}."
-    )
-
-
 def _generate_rag_response(
     client,
     user_query: str,
@@ -771,32 +538,25 @@ def _generate_rag_response(
                 "matches the query, what evidence supports that match, and how its occasion fit "
                 "matters when occasion evidence is present. If the existing text is awkward or "
                 "thin, improve it with the listed colors, plant type, maintenance, meanings, "
-                "occasions, and matched evidence. Do not copy weak fallback phrases like "
+                "occasions, and matched evidence. Do not copy weak phrases like "
                 "'fits mother day', 'visible evidence', or 'symbolism supports' verbatim. "
                 "For every card occasion summary, rewrite the existing occasion fit text into "
                 "a graceful sentence about when the flower is suitable. If a record says it has "
                 "occasion evidence, rag_occasion_summary must not be empty; return an empty "
                 "string only when the record has no occasion evidence. "
-                "For every card ir_summary, QUICKLY summarize the MEANING data, "
-                "so that it is more grammatically correct and easier to read. do "
-                "NOT add new words not in the data. Keep at most 4 sentences"
                 "Never mention RAG, IR,"
                 "vectors, retrieval, database, matched keywords, score, or context. "
                 "Return JSON only with this exact shape: "
                 "{\"answer\":\"2 to 3 sentence overall answer\", "
                 "\"cards\":[{\"rank\":1,\"name\":\"exact Flower name\","
                 "\"scientific_name\":\"exact scientific name\","
-                "\"ir_summary\":\" at most 3 sentences for the raw card\","
                 "\"rag_summary\":\"2 to 3 sentences grounded in the retrieved record\","
                 "\"rag_occasion_summary\":\"one sentence about occasion fit or empty string\"}]}. "
                 "The answer should be 2 to 3 graceful sentences, around 55 to 70 words total. "
                 "The cards array must contain exactly one entry for every retrieved flower record, "
                 "in the same order, using the exact rank, name, and scientific name shown. "
                 "Do not skip duplicated or similar-looking records; each retrieved record needs "
-                "its own ir_summary, rag_summary, and rag_occasion_summary. "
-                "Each ir_summary must be around 3 useful sentences summarized from meaning data and must "
-                "not copy the rag_summary. It must use directly the data for that particular flower, "
-                "and just rewrite in a more user friendly readable way."
+                "its own rag_summary and rag_occasion_summary. "
                 "Each rag_summary must be 2 to 3 useful sentences, 45 to 60 words total, and "
                 "should explain the fit using evidence that matters for the original user query."
                 "Include WHY it was chosen. Each "
@@ -835,19 +595,17 @@ def _generate_rag_response(
                 rank_number = None
             name = str(card.get("name") or "").strip()
             scientific_name = str(card.get("scientific_name") or "").strip()
-            ir_summary = str(card.get("ir_summary") or "").strip()
             summary = str(card.get("rag_summary") or "").strip()
             occasion_summary = str(card.get("rag_occasion_summary") or "").strip()
             card_text = {
-                "ir_summary": ir_summary,
                 "rag_summary": summary,
                 "rag_occasion_summary": occasion_summary,
             }
-            if (ir_summary or summary or occasion_summary) and rank_number is not None:
+            if (summary or occasion_summary) and rank_number is not None:
                 card_summaries[f"rank:{rank_number}"] = card_text
-            if name and (ir_summary or summary or occasion_summary):
+            if name and (summary or occasion_summary):
                 card_summaries[_rag_name_key(name)] = card_text
-            if scientific_name and (ir_summary or summary or occasion_summary):
+            if scientific_name and (summary or occasion_summary):
                 card_summaries[f"scientific:{_rag_name_key(scientific_name)}"] = card_text
 
     if not answer:
@@ -933,8 +691,7 @@ def _generate_rag_card_response(client, user_query: str, document: dict) -> dict
                 "flower record below. Do not invent meanings, colors, occasions, or care "
                 "details. Return JSON only with this exact shape: "
                 "{\"rag_summary\":\"2 concise sentences explaining why this flower fits\","
-                "\"rag_occasion_summary\":\"one concise occasion sentence or empty string\","
-                "\"ir_summary\":\"at most 2 sentences summarizing the meaning data\"}. "
+                "\"rag_occasion_summary\":\"one concise occasion sentence or empty string\"}. "
                 "Do not mention RAG, IR, vectors, retrieval, database, matched keywords, "
                 "score, or context."
             ),
@@ -958,7 +715,6 @@ def _generate_rag_card_response(client, user_query: str, document: dict) -> dict
     return {
         "rag_summary": str(parsed.get("rag_summary") or "").strip(),
         "rag_occasion_summary": str(parsed.get("rag_occasion_summary") or "").strip(),
-        "ir_summary": str(parsed.get("ir_summary") or "").strip(),
     }
 
 
@@ -1032,11 +788,9 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
             logger.info("Skipping LLM answer generation because all LLM workers are busy.")
 
     if not answer:
-        answer_source = "local"
-        answer = _fallback_rag_answer(query, context_documents)
+        answer_source = ""
     if not card_summaries:
-        card_summaries = _fallback_card_summaries(query, context_documents)
-        card_summary_source = "local"
+        card_summary_source = ""
 
     for suggestion_index, suggestion in enumerate(payload.get("suggestions", []) or [], start=1):
         name = suggestion.get("name", "")
@@ -1050,31 +804,14 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
             or {}
         )
         summary = card_text.get("rag_summary", "")
-        ir_summary = card_text.get("ir_summary", "")
         occasion_summary = card_text.get("rag_occasion_summary", "")
-        data_summary = _local_data_summary(
-            {
-                "name": name,
-                "meanings": suggestion.get("meanings", []),
-                "occasions": suggestion.get("occasions", []),
-            }
-        )
 
-        suggestion["ir_summary"] = ir_summary or data_summary
-        suggestion["ir_summary_source"] = card_summary_source if ir_summary else "local"
-        suggestion["rag_summary"] = summary or data_summary
-        suggestion["rag_occasion_summary"] = (
-            occasion_summary
-            if card_summary_source == "llm"
-            else occasion_summary or suggestion.get("query_fit_occasion_summary", "")
-        )
-        suggestion["ir_occasion_summary"] = occasion_summary  
-        suggestion["rag_source"] = card_summary_source if summary else "local"
-        suggestion["rag_occasion_source"] = (
-            card_summary_source
-            if occasion_summary
-            else suggestion.get("occasion_summary_source", "")
-        )
+        suggestion["ir_summary"] = suggestion.get("ir_summary", "")
+        suggestion["ir_summary_source"] = suggestion.get("ir_summary_source", "")
+        suggestion["rag_summary"] = summary
+        suggestion["rag_occasion_summary"] = occasion_summary
+        suggestion["rag_source"] = card_summary_source if summary else ""
+        suggestion["rag_occasion_source"] = card_summary_source if occasion_summary else ""
         suggestion["ir_query_fit_explanation"] = suggestion.get("query_fit_explanation", "")
         suggestion["ir_query_fit_occasion_summary"] = suggestion.get("query_fit_occasion_summary", "")
 
@@ -1092,13 +829,14 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
 
 def _rag_overview(query: str, limit: int, method: str) -> dict:
     client, unavailable_reason = _llm_client()
-    retrieval_query = query
+    retrieval_query, exclude_terms, transform_rationale, transform_source = _cached_retrieval_query(query)
     payload = _recommend_with_fallback_copy(
         retrieval_query,
         limit,
         method,
         use_llm_explanations=False,
     )
+    payload = _apply_hard_filters(payload, exclude_terms)
     payload["query"] = query
     context_documents = _build_rag_context_documents(payload, limit=min(limit, 3))
 
@@ -1118,19 +856,18 @@ def _rag_overview(query: str, limit: int, method: str) -> dict:
         else:
             logger.info("Skipping LLM overview because all LLM workers are busy.")
     else:
-        logger.info("Using local overview fallback: %s", unavailable_reason)
+        logger.info("Skipping LLM overview: %s", unavailable_reason)
 
     if not answer:
-        answer_source = "local"
-        answer = _fallback_rag_answer(query, context_documents)
+        answer_source = ""
 
     return {
         "query": query,
         "rag": {
             "user_query": query,
             "retrieval_query": retrieval_query,
-            "query_transform_source": "local",
-            "query_transform_rationale": "Overview uses the raw query for speed.",
+            "query_transform_source": transform_source,
+            "query_transform_rationale": transform_rationale,
             "answer": answer,
             "answer_source": answer_source,
             "context_documents": context_documents,
@@ -1153,25 +890,19 @@ def _rag_card_summary(query: str, suggestion: dict) -> dict:
         else:
             logger.info("Skipping LLM card refinement because all LLM workers are busy.")
     else:
-        logger.info("Using local card refinement fallback: %s", unavailable_reason)
+        logger.info("Skipping LLM card refinement: %s", unavailable_reason)
 
     if not any(card_text.values()):
-        card_summary_source = "local"
-        data_summary = _local_data_summary(document)
-        card_text = {
-            "ir_summary": data_summary,
-            "rag_summary": _local_card_summary(query, document),
-            "rag_occasion_summary": suggestion.get("query_fit_occasion_summary", ""),
-        }
+        card_summary_source = ""
 
     return {
         "name": suggestion.get("name", ""),
         "scientific_name": suggestion.get("scientific_name", ""),
-        "ir_summary": card_text.get("ir_summary", "") or _local_data_summary(document),
-        "ir_summary_source": card_summary_source if card_text.get("ir_summary") else "local",
-        "rag_summary": card_text.get("rag_summary", "") or _local_card_summary(query, document),
+        "ir_summary": suggestion.get("ir_summary", ""),
+        "ir_summary_source": suggestion.get("ir_summary_source", ""),
+        "rag_summary": card_text.get("rag_summary", ""),
         "rag_occasion_summary": card_text.get("rag_occasion_summary", ""),
-        "rag_source": card_summary_source if card_text.get("rag_summary") else "local",
+        "rag_source": card_summary_source if card_text.get("rag_summary") else "",
         "rag_occasion_source": card_summary_source if card_text.get("rag_occasion_summary") else "",
     }
 

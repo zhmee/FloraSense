@@ -1,24 +1,19 @@
 """
-Query-aware explanation generation for flower recommendations.
+Query-aware metadata helpers for flower recommendations.
 
-The recommender already retrieves and ranks with latent semantic vectors. This
-module turns that retrieval evidence into short user-facing explanations. If an
-API key is configured, the explanation text is rewritten by the class LLM
-client; otherwise the deterministic fallback still uses the same evidence.
+Meaning and occasion card text is preprocessed in
+`merged_preprocessed_meanings.csv`; this module no longer rewrites that copy or
+fills missing meaning/occasion text.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
-from functools import lru_cache
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-MAX_FLOWERS_PER_LLM_CALL = 10
 MAX_EVIDENCE_VALUES = 4
 QUERY_STOPWORDS = {
     "about",
@@ -622,344 +617,18 @@ def _keyword_terms(suggestion: dict, categories: set[str] | None = None) -> list
     return _dedupe(terms)[:5]
 
 
-def _query_term_supported(term: str, values: Any) -> bool:
-    normalized_term = _normalize_key(term)
-    if not normalized_term or not isinstance(values, list):
-        return False
-    return any(
-        normalized_term == _normalize_key(value)
-        or normalized_term in _normalize_key(value)
-        or _normalize_key(value) in normalized_term
-        for value in values
-        if _normalize_key(value)
-    )
-
-
-def _query_focus_terms(query: str) -> list[str]:
-    return [
-        token
-        for token in _query_signal_tokens(query)
-        if token not in {"care", "easy", "hard", "need", "needs", "want"}
-    ][:4]
-
-
-def _fallback_explanation(query: str, suggestion: dict, query_keywords: Any = None) -> str:
-    name = _clean_text(suggestion.get("name")) or "This flower"
-    categories = _query_categories(query_keywords)
-    query_terms = _query_terms_by_category(query_keywords)
-    meaning_intent = _query_has_meaning_intent(query, categories)
-    meaning_terms = (
-        _matching_meaning_query_terms(
-            query_terms.get("meaning", []),
-            suggestion.get("meanings"),
-            3,
-        )
-        if meaning_intent
-        else []
-    )
-    occasion_terms = _matching_query_terms(
-        query_terms.get("occasion", []),
-        suggestion.get("occasions"),
-        2,
-    )
-    occasion_labels = (
-        _occasion_evidence_labels(query, suggestion.get("occasions"), 2)
-        if "occasion" in categories or _keyword_terms(suggestion, {"occasion"})
-        else []
-    )
-    meanings = _compact_evidence_labels(suggestion.get("meanings"), 3)
-    maintenance = _compact_values(suggestion.get("maintenance"), 1)
-    display_colors = _compact_values(suggestion.get("colors"), 2)
-    display_plant_types = _compact_values(suggestion.get("plant_types"), 2)
-    colors = _matching_query_terms(query_terms.get("color", []), suggestion.get("colors"), 2)
-    if not colors:
-        colors = _values_mentioned_by_query(query, suggestion.get("colors"), 2)
-    maintenance_terms = _matching_query_terms(
-        query_terms.get("maintenance", []),
-        suggestion.get("maintenance"),
-        1,
-    )
-    plant_types = _matching_query_terms(query_terms.get("plant_type", []), suggestion.get("plant_types"), 2)
-    if not plant_types:
-        plant_types = _values_mentioned_by_query(query, suggestion.get("plant_types"), 2)
-
-    focus_terms = _query_focus_terms(query)
-    supported_focus = [
-        term
-        for term in focus_terms
-        if (
-            _query_term_supported(term, suggestion.get("colors"))
-            or _query_term_supported(term, suggestion.get("meanings"))
-            or _query_term_supported(term, suggestion.get("occasions"))
-            or _query_term_supported(term, suggestion.get("plant_types"))
-            or _query_term_supported(term, suggestion.get("maintenance"))
-        )
-    ]
-    unsupported_focus = [term for term in focus_terms if term not in supported_focus and term not in {"flower", "flowers"}]
-
-    reasons = []
-    if colors:
-        reasons.append(f"is available in {_join_human(colors)}")
-    if maintenance_terms:
-        reasons.append(f"fits the requested {_join_human(maintenance_terms)} care level")
-    elif maintenance and ("maintenance" in categories or _values_mentioned_by_query(query, maintenance, 1)):
-        reasons.append(f"has {maintenance[0]} care needs")
-    if plant_types:
-        reasons.append(f"is a {_join_human(plant_types)}")
-    if meaning_terms:
-        reasons.append(f"directly supports {_join_human(meaning_terms)}")
-    if occasion_terms:
-        reasons.append(f"suits {_join_human(occasion_terms[:2])}")
-    elif occasion_labels:
-        occasion_detail = _occasion_detail_clause(query, suggestion.get("occasions"))
-        if occasion_detail:
-            concise_detail = _trim_dangling_tail(_shorten_words(occasion_detail, 15).rstrip("."))
-            reasons.append(f"has occasion evidence for {occasion_labels[0]}: {concise_detail}")
-        else:
-            reasons.append(f"has occasion evidence for {_join_human(occasion_labels[:2])}")
-
-    query_clause = f' for "{_clean_text(query)}"' if _clean_text(query) else ""
-    if not reasons:
-        return _sentence_case(
-            _shorten_words(f"{name} is a weaker fit{query_clause}; the visible flower details only partially support the request.")
-        )
-
-    if unsupported_focus and reasons:
-        return _sentence_case(
-            _shorten_words(
-                f"{name} is a partial fit{query_clause}. Retrieved evidence shows it {_join_human(reasons)}, while the visible fields do not clearly support {_join_human(unsupported_focus[:2])}.",
-                54,
-            )
-        )
-
-    support_sentence = f"The IR system matched {name}{query_clause} using retrieved evidence that it {_join_human(reasons)}."
-    attribute_bits = []
-    if display_colors:
-        attribute_bits.append(f"colors: {_join_human(display_colors)}")
-    if maintenance:
-        attribute_bits.append(f"care: {maintenance[0]}")
-    if display_plant_types:
-        attribute_bits.append(f"type: {_join_human(display_plant_types)}")
-    if attribute_bits:
-        support_sentence += f" Retrieved fields also show {'; '.join(attribute_bits)}."
-    return _sentence_case(_shorten_words(support_sentence, 64))
-
-
-def _fallback_occasion_summary(query: str, suggestion: dict) -> str:
-    occasions = _occasion_evidence_labels(query, suggestion.get("occasions"), 3)
-    all_occasion_labels = _known_occasion_labels(suggestion.get("occasions"), 6)
-    if all_occasion_labels:
-        query_tokens = _expanded_occasion_query_tokens(set(_query_signal_tokens(query)))
-        query_matched_labels = [
-            label
-            for label in all_occasion_labels
-            if _occasion_label_matches_query(label, query_tokens)
-        ]
-        occasions = _dedupe(query_matched_labels + all_occasion_labels)[:4]
-
-    if not occasions:
-        return ""
-
-    occasion_clause = _join_human(occasions)
-    query_tokens = set(_query_signal_tokens(query))
-    has_occasion_intent = bool(query_tokens & set(OCCASION_WORDS)) or any(
-        _normalize_key(label) in query_tokens
-        for label in occasions
-    )
-    if not has_occasion_intent:
-        return occasion_clause
-
-    return occasion_clause
-
-
-def _llm_explanations_enabled() -> bool:
-    value = os.getenv("FLORASENSE_LLM_EXPLANATIONS", "true").strip().lower()
-    return value not in {"0", "false", "no", "off"}
-
-
-@lru_cache(maxsize=1)
-def _llm_client():
-    if not _llm_explanations_enabled():
-        return None
-
-    api_key = os.getenv("SPARK_API_KEY")
-    if not api_key:
-        return None
-
-    try:
-        from infosci_spark_client import LLMClient
-    except Exception:
-        logger.exception("Could not import infosci_spark_client for flower explanations.")
-        return None
-
-    return LLMClient(api_key=api_key)
-
-
-def _build_llm_payload(payload: dict) -> dict:
-    query = _clean_text(payload.get("query"))
-    query_keywords = [
-        {
-            "keyword": _clean_text(item.get("keyword")),
-            "category": _clean_text(item.get("category")),
-        }
-        for item in (payload.get("keywords_used", []) or [])[:8]
-        if _clean_text(item.get("keyword"))
-    ]
-
-    flowers = []
-    for suggestion in (payload.get("suggestions", []) or [])[:MAX_FLOWERS_PER_LLM_CALL]:
-        flowers.append(
-            {
-                "name": _clean_text(suggestion.get("name")),
-                "scientific_name": _clean_text(suggestion.get("scientific_name")),
-                "score": suggestion.get("score"),
-                "supporting_terms": [
-                    {
-                        "keyword": _clean_text(match.get("keyword")),
-                        "category": _clean_text(match.get("category")),
-                    }
-                    for match in (suggestion.get("matched_keywords", []) or [])[:6]
-                    if _clean_text(match.get("keyword"))
-                ],
-                "meaning_evidence": _compact_evidence_labels(suggestion.get("meanings"), 4),
-                "occasion_evidence": _occasion_evidence_labels(query, suggestion.get("occasions"), 3),
-                "colors": _compact_values(suggestion.get("colors"), 4),
-                "maintenance": _compact_values(suggestion.get("maintenance"), 2),
-                "plant_types": _compact_values(suggestion.get("plant_types"), 3),
-            }
-        )
-
-    return {
-        "query": query,
-        "query_keywords": query_keywords,
-        "flowers": flowers,
-    }
-
-
-def _extract_json(content: str) -> Any:
-    content = _clean_text(content)
-    if not content:
-        return None
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        pass
-
-    array_start = content.find("[")
-    array_end = content.rfind("]")
-    if array_start != -1 and array_end > array_start:
-        try:
-            return json.loads(content[array_start : array_end + 1])
-        except json.JSONDecodeError:
-            return None
-
-    object_start = content.find("{")
-    object_end = content.rfind("}")
-    if object_start != -1 and object_end > object_start:
-        try:
-            return json.loads(content[object_start : object_end + 1])
-        except json.JSONDecodeError:
-            return None
-
-    return None
-
-
-def _normalize_llm_items(parsed: Any) -> list[dict]:
-    if isinstance(parsed, dict):
-        if isinstance(parsed.get("explanations"), list):
-            return parsed["explanations"]
-        if isinstance(parsed.get("suggestions"), list):
-            return parsed["suggestions"]
-        return [parsed]
-    if isinstance(parsed, list):
-        return parsed
-    return []
-
-
-def _generate_llm_explanations(payload: dict) -> dict[str, dict[str, str]]:
-    client = _llm_client()
-    if client is None:
-        return {}
-
-    llm_payload = _build_llm_payload(payload)
-    if not llm_payload["flowers"]:
-        return {}
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You write concise FloraSense recommendation explanations. "
-                "Use only the provided meaning evidence, occasion evidence, supporting terms, "
-                "colors, maintenance, and plant types. Do not invent flower symbolism. "
-                "Prioritize the user's query keywords and matching structured attributes first; "
-                "then use the flower's meaning evidence as support when the query is about symbolism. "
-                "If the query is not about meaning or symbolism, do not mention symbolic meanings. "
-                "Explain why each flower works for the user's query in one polished sentence "
-                "of 22 to 45 words. Also write a separate occasion summary of 12 to 32 words "
-                "using only provided occasion evidence; use an empty string if no occasion evidence is present. "
-                "Write like a florist explaining the recommendation. Never mention retrieval, data, "
-                "matched keywords, scores, latent space, vectors, axes, or the model. "
-                "Return JSON only: "
-                "[{\"name\":\"Flower name\",\"query_fit_explanation\":\"sentence\","
-                "\"query_fit_occasion_summary\":\"sentence or empty string\"}]."
-            ),
-        },
-        {
-            "role": "user",
-            "content": json.dumps(llm_payload, ensure_ascii=True),
-        },
-    ]
-
-    try:
-        response = client.chat(messages)
-    except Exception:
-        logger.exception("LLM flower explanation generation failed.")
-        return {}
-
-    parsed = _extract_json((response or {}).get("content", ""))
-    explanations = {}
-    for item in _normalize_llm_items(parsed):
-        if not isinstance(item, dict):
-            continue
-        name = _clean_text(item.get("name"))
-        explanation = _shorten_words(_clean_text(item.get("query_fit_explanation")), 52)
-        occasion_summary = _shorten_words(_clean_text(item.get("query_fit_occasion_summary")), 36)
-        if explanation and not _is_user_facing_text(explanation):
-            explanation = ""
-        if occasion_summary and not _is_user_facing_text(occasion_summary):
-            occasion_summary = ""
-        if not name or (not explanation and not occasion_summary):
-            continue
-        explanations[_normalize_key(name)] = {
-            "query_fit_explanation": explanation,
-            "query_fit_occasion_summary": occasion_summary,
-        }
-
-    return explanations
-
-
 def add_query_fit_explanations(payload: dict, use_llm: bool = False) -> dict:
-    """Attach a query-aware explanation to each recommendation suggestion."""
+    """Attach query keyword explanations without rewriting card copy."""
     normalized = dict(payload or {})
-    query = _clean_text(normalized.get("query"))
     normalized["keywords_used"] = _add_query_breakdown_explanations(normalized)
-    llm_explanations = _generate_llm_explanations(normalized) if use_llm else {}
 
     suggestions = []
     for suggestion in normalized.get("suggestions", []) or []:
         item = dict(suggestion)
-        name_key = _normalize_key(_clean_text(item.get("name")))
-        fallback = _fallback_explanation(query, item, normalized.get("keywords_used", []))
-        fallback_occasion = _fallback_occasion_summary(query, item)
-        llm_item = llm_explanations.get(name_key, {})
-        llm_text = llm_item.get("query_fit_explanation", "") if isinstance(llm_item, dict) else ""
-        llm_occasion = llm_item.get("query_fit_occasion_summary", "") if isinstance(llm_item, dict) else ""
-        item["query_fit_explanation"] = llm_text or fallback
-        item["explanation_source"] = "llm" if llm_text else "local"
-        item["query_fit_occasion_summary"] = llm_occasion or fallback_occasion
-        item["occasion_summary_source"] = "llm" if llm_occasion else ("local" if fallback_occasion else "")
+        item["query_fit_explanation"] = item.get("query_fit_explanation", "")
+        item["explanation_source"] = item.get("explanation_source", "")
+        item["query_fit_occasion_summary"] = item.get("query_fit_occasion_summary", "")
+        item["occasion_summary_source"] = item.get("occasion_summary_source", "")
         suggestions.append(item)
 
     normalized["suggestions"] = suggestions

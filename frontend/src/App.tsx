@@ -1005,16 +1005,16 @@ function App({ isActive = true }: AppProps): JSX.Element {
                       ? 'Writing'
                     : results.rag?.answer_source === 'llm'
                       ? 'RAG'
-                      : 'Local fallback'}
+                      : ''}
                 </span>
               </div>
               <p className="ai-overview-text">
                 {ragAnswer ? displayedRagAnswer : 'Generating a grounded RAG overview from the retrieved flower records...'}
                 {isRagTyping && <span className="ai-overview-cursor" aria-hidden="true">|</span>}
               </p>
-              {results.rag?.retrieval_query && results.rag.retrieval_query !== results.query && (
+              {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
                 <p className="ai-overview-subtext">
-                  Search query: <strong>{results.rag.retrieval_query}</strong>
+                  Rewritten query: <strong>{results.rag.retrieval_query}</strong>
                 </p>
               )}
             </section>
@@ -1040,24 +1040,22 @@ function App({ isActive = true }: AppProps): JSX.Element {
                 const suggestionKey = `${suggestion.name}-${suggestion.scientific_name}`
                 const displayName = formatFlowerDisplayName(suggestion.name)
                 const fullMeaningText = formatFullText(suggestion.meanings)
-                const queryFitExplanation = suggestion.query_fit_explanation?.trim() ?? ''
-                const irSummary = suggestion.ir_summary?.trim() || queryFitExplanation
+                const irSummary = suggestion.ir_summary?.trim() ?? ''
                 const fullOccasionText = formatFullText(suggestion.occasions ?? [])
                 const queryFitOccasionSummary = (
-                  suggestion.ir_occasion_summary?.trim() ||
                   suggestion.query_fit_occasion_summary?.trim() ||
                   ''
                 )              
                 const frontOccasionText = queryFitOccasionSummary || fullOccasionText
                 const ragOccasionSummary = suggestion.rag_occasion_summary?.trim() ?? ''
                 const hasFrontOccasionText = frontOccasionText !== 'Not listed' && frontOccasionText.length > 0
-                const ragSummary = suggestion.rag_summary?.trim() || queryFitExplanation || 'No RAG summary is available for this result.'
+                const ragSummary = suggestion.rag_summary?.trim() || 'No RAG summary is available for this result.'
                 const ragCombinedSummary =
                   ragOccasionSummary && !ragSummary.toLowerCase().includes(ragOccasionSummary.toLowerCase())
                     ? `${ragSummary} ${ragOccasionSummary}`
                     : ragSummary
                 const frontMeaningText = irSummary || fullMeaningText
-                const ragSource = suggestion.rag_source || suggestion.explanation_source || 'local'
+                const ragSource = suggestion.rag_source || ''
                 const isDetailsExpanded = Boolean(
                   expandedDetailSections[detailExpandKey(suggestionKey, 'details')],
                 )
@@ -1093,7 +1091,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                               }))
                             }}
                           >
-                            {isRefiningCard ? 'Refining...' : hasRefinedDetails ? (isCardFlipped ? 'Show raw IR' : 'Show refined') : 'Refine details'}
+                            {isRefiningCard ? 'Refining...' : hasRefinedDetails ? (isCardFlipped ? 'Show raw IR' : 'Show RAG') : 'Refine details'}
                           </button>
                         </div>
                         <div className="card-header">
@@ -1153,7 +1151,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                           </div>
                           {hasFrontOccasionText && (
                             <div className="raw-text-block">
-                              <span>{suggestion.ir_occasion_summary ? 'Occasions' : queryFitOccasionSummary ? 'Possible occasions' : 'Occasions'}</span>
+                              <span>{queryFitOccasionSummary ? 'Possible occasions' : 'Occasions'}</span>
                               <p>{renderHighlightedText(frontOccasionText, highlightTerms)}</p>
                             </div>
                           )}
@@ -1165,7 +1163,7 @@ function App({ isActive = true }: AppProps): JSX.Element {
                         >
                           <div className="comparison-panel__head">
                             <span className="detail-label">RAG Recommendation</span>
-                            <small>{ragSource}</small>
+                            {ragSource && <small>{ragSource}</small>}
                           </div>
                           <div className="rag-card-section">
                             <span>Why this matches</span>
@@ -1187,12 +1185,6 @@ function App({ isActive = true }: AppProps): JSX.Element {
                               <strong>{formatLabel(suggestion.plant_types)}</strong>
                             </div>
                           </div>
-                          {results.rag?.query_transform_source === 'llm' && results.rag.retrieval_query && (
-                            <div className="rag-card-query">
-                              <span>Refined search query</span>
-                              <strong>{results.rag.retrieval_query}</strong>
-                            </div>
-                          )}
                           {suggestion.matched_keywords.length > 0 && (
                             <div className="rag-card-match-list">
                               {suggestion.matched_keywords.slice(0, 4).map((match, matchIndex) => (
