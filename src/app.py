@@ -6,7 +6,7 @@ from flask import Flask
 load_dotenv()
 from flask_cors import CORS
 from models import db, Episode, Review
-from routes import register_routes
+from routes import register_routes, warm_route_caches
 
 # src/ directory and project root (one level up)
 current_directory = os.path.dirname(os.path.abspath(__file__))
@@ -59,5 +59,11 @@ def init_db():
 
 init_db()
 
+if os.getenv("FLORASENSE_SKIP_WARMUP", "").lower() not in {"1", "true", "yes"}:
+    try:
+        warm_route_caches()
+    except Exception:
+        app.logger.exception("Route cache warmup failed; continuing with lazy loading.")
+
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    app.run(debug=True, host="0.0.0.0", port=5001, threaded=True)

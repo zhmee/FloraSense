@@ -31,4 +31,4 @@ COPY src/ $CONTAINER_HOME/src/
 COPY data_scraping/ $CONTAINER_HOME/data_scraping/
 COPY --from=frontend-build /app/frontend/dist $CONTAINER_HOME/frontend/dist
 
-CMD ["python", "-m", "gunicorn", "--chdir", "src", "app:app", "--bind", "0.0.0.0:5000", "--log-level", "debug"]
+CMD ["python", "-m", "gunicorn", "--chdir", "src", "app:app", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "120", "--preload", "--log-level", "info"]
