@@ -1299,7 +1299,7 @@ const VisualizerCanvas = memo(function VisualizerCanvas(props: VisualizerCanvasP
   `• Drag to rotate
   • Scroll to zoom
   • Click a flower to focus
-  • Similar flowers are linked`
+  • Flowers with connections share similar meanings`
   );
     return () => {
       cancelAnimationFrame(s.rafId); ro.disconnect()
@@ -1370,7 +1370,7 @@ function Visualizer3D({ isActive = true }: Visualizer3DProps): JSX.Element {
   const recommendationListRef = useRef<HTMLDivElement | null>(null)
   const introAnimatedRef = useRef(false)
   const bouquetInsightsCacheRef = useRef(new Map<string, BouquetInsightsResponse>())
-
+const [instructionsOpen, setInstructionsOpen] = useState(false)
   // ── BOUQUE PORTION START  ────────────────────────────────────────────────────
 const [myBouquetIds, setMyBouquetIds] = useState<string[]>([])
 const [myBouquetInsights, setMyBouquetInsights] = useState<BouquetInsightsResponse | null>(null)
@@ -1815,34 +1815,47 @@ return (
             <div className="viz-canvas__fallback">{loadError ?? 'Loading 3D Visualizer...'}</div>
           )}
           <div className="viz-hud">
-            <div className="viz-hud__left">
-              <div className="viz-hud__badge">
-              <span className={`viz-panel__status viz-panel__status--${sceneStatus}`}>{getSceneStatusLabel(sceneStatus)}</span>
-              <p className="viz-panel__message viz-panel__message--instructions">{statusMessage}</p>
-              <div className="viz-hud__actions">
-                <button type="button" className="viz-hud__action" onClick={handleResetFocus}>
-                  Reset focus
-                </button>
-              </div>
+  <div className="viz-hud__left">
+    <div className="viz-hud__badge">
+      <span className={`viz-panel__status viz-panel__status--${sceneStatus}`}>
+        {getSceneStatusLabel(sceneStatus)}
+      </span>
+      <div className="viz-hud__actions" style={{ marginTop: 8, flexDirection: 'column', gap: 8 }}>
+        <button type="button" className="viz-hud__action" onClick={handleResetFocus}>
+          Reset focus
+        </button>
+        <button
+          type="button"
+          className="viz-hud__action"
+          onClick={() => setInstructionsOpen(prev => !prev)}
+        >
+          {instructionsOpen ? 'Hide' : 'Show Info'}
+        </button>
+      </div>
+      {instructionsOpen && (
+        <p className="viz-panel__message viz-panel__message--instructions" style={{ marginTop: 8 }}>
+          {statusMessage}
+        </p>
+      )}
+    </div>
+    {selectedFlower && (
+      <div className="viz-info-card viz-hud__semantic-signals">
+        <div className="viz-focused-flower">
+          <strong className="viz-focused-flower__name">{formatFlowerDisplayName(selectedFlower.name)}</strong>
+          <span className="viz-focused-flower__scientific">{selectedFlower.scientific_name}</span>
+        </div>
+        <div className="viz-meta-block">
+          {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
+            <div key={label}>
+              <h4>{label}</h4>
+              <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
             </div>
-              {selectedFlower && (
-                <div className="viz-info-card viz-hud__semantic-signals">
-                  <div className="viz-focused-flower">
-                    <strong className="viz-focused-flower__name">{formatFlowerDisplayName(selectedFlower.name)}</strong>
-                    <span className="viz-focused-flower__scientific">{selectedFlower.scientific_name}</span>
-                  </div>
-                  <div className="viz-meta-block">
-                    {([['Colors', selectedFlower.colors], ['Meanings', selectedFlower.meanings.slice(0, 6)], ['Occasions', selectedFlower.occasions.slice(0, 6)]] as [string, string[]][]).map(([label, vals]) => (
-                      <div key={label}>
-                        <h4>{label}</h4>
-                        <div className="viz-chip-list">{vals.map(v => <span key={v} className="viz-chip">{v}</span>)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+</div>
         </div>
           
   
