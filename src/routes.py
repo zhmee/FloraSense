@@ -347,32 +347,31 @@ def _llm_retrieval_query(client, user_query: str) -> tuple[str, list[str], str, 
     return retrieval_query, exclude_terms, rationale, "llm"
 
 import re
-
 def _apply_hard_filters(payload: dict, exclude_terms: list[str]) -> dict:
     if not exclude_terms:
         return payload
 
     filtered = []
     for suggestion in payload.get("suggestions", []):
-        haystack = " ".join(
-            suggestion.get("colors", [])
-            + suggestion.get("meanings", [])
-            + suggestion.get("occasions", [])
-            + suggestion.get("plant_types", [])
-            + suggestion.get("maintenance", [])
-            + [suggestion.get("name", "")]
-        ).lower()
+        colors = [c.lower() for c in suggestion.get("colors", [])]
+        name = suggestion.get("name", "").lower()
 
-        excluded = any(
-            re.search(rf"\b{re.escape(term)}\b", haystack)
-            for term in exclude_terms
+        # only exclude if the color field itself matches, not meanings/occasions
+        color_excluded = colors and all(
+            any(re.search(rf"\b{re.escape(term)}\b", c) for term in exclude_terms)
+            for c in colors
         )
-        if excluded:
+        name_excluded = any(
+            re.search(rf"\b{re.escape(term)}\b", name)
+            for term in exclude_terms
+            if term not in {"white", "red", "pink", "yellow", "purple", "orange", "blue"}
+        )
+
+        if color_excluded or name_excluded:
             continue
         filtered.append(suggestion)
 
     if not filtered:
-        logger.warning(f"Initial suggestions: {len(payload.get('suggestions', []))}")
         return payload
 
     payload["suggestions"] = filtered
@@ -758,12 +757,13 @@ def _rag_recommendations(query: str, limit: int, method: str) -> dict:
 
     payload = _apply_hard_filters(payload, exclude_terms)
 
-  
     if len(payload.get("suggestions", [])) < limit:
         logger.warning("Too few results after filtering, refilling...")
         modules = _load_search_modules()
-        fallback = modules["recommend_flowers_tfidf"](retrieval_query, limit=limit)
-        payload["suggestions"] = fallback.get("suggestions", [])
+        fallback = modules["recommend_flowers_tfidf"](retrieval_query, limit=limit * 2)
+        fallback_payload = {"suggestions": fallback.get("suggestions", [])}
+        fallback_payload = _apply_hard_filters(fallback_payload, exclude_terms)  # ← filter again
+        payload["suggestions"] = fallback_payload.get("suggestions", [])[:limit]
 
     payload["query"] = query
     payload["query"] = query
@@ -971,10 +971,17 @@ def register_routes(app):
     @app.route("/api/recommendations")
     def recommendations():
         query = request.args.get("q", "")
-        method = request.args.get("method", "svd") # SVD or TF-IDF # TODO: IMPLEMENT 
+        method = request.args.get("method", "svd")
         limit = request.args.get("limit", default=5, type=int)
         limit = max(1, min(limit, 20))
-        return jsonify(_recommend_with_fallback_copy(query, limit, method))
+        if not query or not query.strip():
+            return jsonify(_recommend_with_fallback_copy(query, limit, method))
+        
+        retrieval_query, exclude_terms, _, _ = _cached_retrieval_query(query)
+        payload = _recommend_with_fallback_copy(retrieval_query, limit, method)
+        payload = _apply_hard_filters(payload, exclude_terms)
+        payload["query"] = query
+        return jsonify(payload)
 
     @app.route("/api/rag-recommendations")
     def rag_recommendations():
@@ -1009,7 +1016,7 @@ def register_routes(app):
 
     @app.route("/api/visualizer-flowers")
     def visualizer():
-        limit = request.args.get("limit", default=48, type=int)
+        limit = request.args.get("limit", default=50, type=int)
         limit = max(1, min(limit, 128))
         return jsonify(copy.deepcopy(_cached_visualizer_flowers(limit)))
 

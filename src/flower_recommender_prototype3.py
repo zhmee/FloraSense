@@ -453,9 +453,7 @@ def _load_preprocessed_meaning_texts() -> dict[str, dict[str, list[str]]]:
     display text now; the app should not regenerate or fall back to scraped
     prose for card meaning/occasion copy.
     """
-    summaries: dict[str, dict[str, list[str]]] = defaultdict(
-        lambda: {"meanings": [], "occasions": []}
-    )
+    summaries: dict[str, list[str]] = {}
     if not PREPROCESSED_MEANINGS_FILE.exists():
         return {}
 
@@ -463,40 +461,29 @@ def _load_preprocessed_meaning_texts() -> dict[str, dict[str, list[str]]]:
         reader = csv.DictReader(handle)
         for row in reader:
             name = (row.get("name") or "").strip()
-            color = (row.get("color") or "").strip()
             if not name:
                 continue
-
             meaning = (row.get("ir_summary") or "").strip()
             occasion = (row.get("occasions_summary") or "").strip()
-            for key in (
-                _preprocessed_lookup_key(name, color),
-                _preprocessed_lookup_key(name),
-            ):
-                if meaning:
-                    summaries[key]["meanings"].append(meaning)
-                if occasion:
-                    summaries[key]["occasions"].append(occasion)
+            if name not in summaries:
+                summaries[name] = {"meanings": [], "occasions": []}
+            if meaning:
+                summaries[name]["meanings"].append(meaning)
+            if occasion:
+                summaries[name]["occasions"].append(occasion)
 
     return {
-        key: {
+        name: {
             "meanings": _dedupe_preserve_order(value["meanings"]),
             "occasions": _dedupe_preserve_order(value["occasions"]),
         }
-        for key, value in summaries.items()
+        for name, value in summaries.items()
     }
-
 
 def _preprocessed_text_for_row(row: dict) -> dict[str, list[str]]:
     lookup = _load_preprocessed_meaning_texts()
     name = (row.get("name") or "").strip()
-    color = (row.get("color") or "").strip()
-    return (
-        lookup.get(_preprocessed_lookup_key(name, color))
-        or lookup.get(_preprocessed_lookup_key(name))
-        or {"meanings": [], "occasions": []}
-    )
-
+    return lookup.get(name) or {"meanings": [], "occasions": []}
 
 def _split_meaning_chunks(value: str) -> list[str]:
     """Delegates to utils.split_meaning_cell."""
@@ -2398,8 +2385,36 @@ def _build_suggestion(
 
     # preprocessed file is only for display -- never for retrieval
     display_text = _preprocessed_text_for_row(flower)
-    displayed_meanings = _select_display_texts(display_text["meanings"], query, 5)
-    displayed_occasions = _select_display_texts(display_text["occasions"], query, 5)
+    query_tokens = set(_tokenize(query))
+    matched_colors = {
+        _normalize(c) for c in flower["colors"]
+        if any(_tokens_share_root(t, _normalize(c)) for t in query_tokens)
+    }
+
+    variants = flower.get("color_variants", [])
+    if matched_colors:
+        relevant = [v for v in variants if _normalize(v["color"]) in matched_colors]
+    else:
+        relevant = variants  # no color in query, show all
+
+    # then use the preprocessed lookup per variant color instead of the merged doc
+    displayed_meanings = []
+    displayed_occasions = []
+    lookup = _load_preprocessed_meaning_texts()
+    for v in relevant:
+        key = _preprocessed_lookup_key(flower["name"], v["color"])
+        preprocessed = lookup.get(key) or {}
+        displayed_meanings.extend(preprocessed.get("meanings", []))
+        displayed_occasions.extend(preprocessed.get("occasions", []))
+
+    displayed_meanings = _select_display_texts(
+        _dedupe_preserve_order(displayed_meanings), query, 2
+    )
+    displayed_occasions = _select_display_texts(
+        _dedupe_preserve_order(displayed_occasions), query, 2
+    )
+    displayed_meanings = _select_display_texts(display_text["meanings"], query, 2)
+    displayed_occasions = _select_display_texts(display_text["occasions"], query, 2)
     ir_summary = " ".join(displayed_meanings).strip()
     occasion_summary = " ".join(displayed_occasions).strip()
 

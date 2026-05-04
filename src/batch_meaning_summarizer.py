@@ -8,13 +8,14 @@ import logging
 import os
 import re
 import time
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-INPUT_CSV  = "data/two.csv"
-OUTPUT_CSV = "flowers_with_ir_summary_two.csv"
-BATCH_SIZE = 20
+INPUT_CSV  = "data/one.csv"
+OUTPUT_CSV = "flowers_with_ir_summary.csv"
+BATCH_SIZE = 10
 SLEEP_BETWEEN_BATCHES = 1.5
 
 COL_NAME        = "name"
@@ -25,11 +26,11 @@ COL_MAINTENANCE = "maintenance"
 COL_MEANING     = "meaning"
 COL_OCCASIONS   = "Special Occasions"
 
-OUTPUT_FIELDS = [COL_NAME, COL_COLOR, "ir_summary", "occasions_summary"]
+OUTPUT_FIELDS = [COL_NAME, "ir_summary", "occasions_summary"]
 
 
-def _row_key(row: dict) -> str:
-    return f"{row.get(COL_NAME, '').strip().lower()}|{row.get(COL_COLOR, '').strip().lower()}"
+def _normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
 
 
 def _llm_client():
@@ -55,42 +56,60 @@ def _llm_text_response(client, messages):
     return (response or {}).get("content", "").strip()
 
 
-def _summarize_batch(client, flowers: list[dict]) -> dict[str, dict]:
-    payload = [
-        {
-            "row_key": f["row_key"],
-            "name": f["name"],
-            "color": f["color"],
-            "scientific_name": f["scientific_name"],
-            "meaning": f["meaning"],
-            "occasions": f["occasions"],
-        }
-        for f in flowers
-    ]
+def _group_rows_by_name(rows: list[dict]) -> dict[str, list[dict]]:
+    """Group all color variants of the same flower together."""
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        name = row.get(COL_NAME, "").strip()
+        if name:
+            groups[name].append(row)
+    return dict(groups)
 
+
+def _summarize_batch(client, flower_groups: list[dict]) -> dict[str, dict]:
+    """
+    Each item in flower_groups is:
+    {
+        "name": "Tulip",
+        "variants": [
+            {"color": "yellow", "meaning": "...", "occasions": "..."},
+            {"color": "white",  "meaning": "...", "occasions": "..."},
+        ]
+    }
+    """
     messages = [
         {
             "role": "system",
             "content": (
-                "Quickly summarize the meaning data for each flower so that it is more "
-                "grammatically correct and easier to read. "
-                "Do NOT add any new words or facts not already in the meaning text. "
-                "Get rid of history lessons, cultural references, and repeated phrases — keep only the core flower meanings. "
-                "Keep it to 3 sentences maximum, around 50 words total. "
-                "For the occasions_summary, rewrite the occasions data into clean natural prose "
-                "describing when and why this flower is given. "
-                "Do not add any occasions not present in the original occasions text. "
-                "Keep it to 2 sentence, around 30 words total. "
-                "Never mention RAG, IR, vectors, retrieval, database, matched keywords, score, or context. "
-                "Each entry has a row_key — return it exactly as given so results can be matched back. "
-                "Return JSON only, as an array: "
-                "[{\"row_key\": \"exact row_key\", \"ir_summary\": \"rewritten meaning\", "
-                "\"occasions_summary\": \"rewritten occasions\"}]"
+                "You receive a list of flowers. Each flower has one or more color variants, "
+                "each with its own meaning and occasions text. "
+                "Your job is to write ONE combined ir_summary and ONE combined occasions_summary "
+                "per flower (not per color variant). "
+                "\n\n"
+                "MEANING RULES:\n"
+                "- If all color variants share the same core meaning, write one general summary. "
+                "Do not mention colors at all in that case.\n"
+                "- If different colors have meaningfully different meanings, briefly mention each "
+                "color's meaning in one flowing sentence, e.g. "
+                "'Red varieties symbolize passion, while white ones convey purity and pink express gratitude.'\n"
+                "- Do NOT add any facts not present in the original meaning text.\n"
+                "- Remove history lessons, cultural references, and repeated phrases.\n"
+                "- Keep it to 3-4 sentences, around 50 words total.\n"
+                "\n"
+                "OCCASIONS RULES:\n"
+                "- Combine all color variants' occasions into one natural summary.\n"
+                "- Do not repeat the same occasion multiple times.\n"
+                "- Do not add occasions not present in the original text.\n"
+                "- Keep it to 1-2 sentences, around 30 words total.\n"
+                "\n"
+                "Return JSON only as an array, one entry per flower:\n"
+                "[{\"name\": \"exact flower name\", \"ir_summary\": \"...\", "
+                "\"occasions_summary\": \"...\"}]"
             ),
         },
         {
             "role": "user",
-            "content": json.dumps(payload, ensure_ascii=True),
+            "content": json.dumps(flower_groups, ensure_ascii=True),
         },
     ]
 
@@ -115,12 +134,12 @@ def _summarize_batch(client, flowers: list[dict]) -> dict[str, dict]:
         return {}
 
     return {
-        item["row_key"]: {
+        item["name"]: {
             "ir_summary": item.get("ir_summary", ""),
             "occasions_summary": item.get("occasions_summary", ""),
         }
         for item in parsed
-        if isinstance(item, dict) and item.get("row_key")
+        if isinstance(item, dict) and item.get("name")
     }
 
 
@@ -133,74 +152,76 @@ def main():
 
     logger.info(f"Loaded {len(rows)} rows from {INPUT_CSV}")
 
-    for row in rows:
-        row["_row_key"] = _row_key(row)
+    groups = _group_rows_by_name(rows)
+    flower_names = list(groups.keys())
+    logger.info(f"Found {len(flower_names)} unique flowers across {len(rows)} color variants")
 
-    # Load any existing progress
+    # load existing progress
     results: dict[str, dict] = {}
     if os.path.exists(OUTPUT_CSV):
         with open(OUTPUT_CSV, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                key = f"{row.get(COL_NAME, '').strip().lower()}|{row.get(COL_COLOR, '').strip().lower()}"
+                name = row.get(COL_NAME, "").strip()
                 ir_summary = row.get("ir_summary", "").strip()
                 occasions_summary = row.get("occasions_summary", "").strip()
-                if ir_summary:
-                    results[key] = {
+                if name and ir_summary:
+                    results[name] = {
                         "ir_summary": ir_summary,
                         "occasions_summary": occasions_summary,
                     }
-        logger.info(f"Resuming — {len(results)} rows already done.")
+        logger.info(f"Resuming — {len(results)} flowers already done.")
 
     def _checkpoint():
         with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDS)
             writer.writeheader()
-            for row in rows:
+            for name, result in results.items():
                 writer.writerow({
-                    COL_NAME: row.get(COL_NAME, ""),
-                    COL_COLOR: row.get(COL_COLOR, ""),
-                    "ir_summary": results.get(row["_row_key"], {}).get("ir_summary", ""),
-                    "occasions_summary": results.get(row["_row_key"], {}).get("occasions_summary", ""),
+                    COL_NAME: name,
+                    "ir_summary": result.get("ir_summary", ""),
+                    "occasions_summary": result.get("occasions_summary", ""),
                 })
 
-    batches = [rows[i:i + BATCH_SIZE] for i in range(0, len(rows), BATCH_SIZE)]
-    for batch_index, batch in enumerate(batches):
-        flowers = [
-            {
-                "row_key": row["_row_key"],
-                "name": row.get(COL_NAME, ""),
-                "color": row.get(COL_COLOR, ""),
-                "scientific_name": row.get(COL_SCIENTIFIC, ""),
-                "meaning": row.get(COL_MEANING, ""),
-                "occasions": row.get(COL_OCCASIONS, ""),
-            }
-            for row in batch
-            if row.get(COL_NAME) and row.get(COL_MEANING)
-            and row["_row_key"] not in results
-        ]
+    # build batches of flower groups (not individual rows)
+    pending_names = [n for n in flower_names if n not in results]
+    batches = [pending_names[i:i + BATCH_SIZE] for i in range(0, len(pending_names), BATCH_SIZE)]
 
-        if not flowers:
-            logger.info(f"Batch {batch_index + 1}/{len(batches)} already done, skipping.")
+    for batch_index, batch_names in enumerate(batches):
+        flower_groups = [
+            {
+                "name": name,
+                "variants": [
+                    {
+                        "color": row.get(COL_COLOR, "").strip(),
+                        "meaning": row.get(COL_MEANING, "").strip(),
+                        "occasions": row.get(COL_OCCASIONS, "").strip(),
+                    }
+                    for row in groups[name]
+                    if row.get(COL_MEANING, "").strip()
+                ],
+            }
+            for name in batch_names
+        ]
+        # skip flowers with no meaning data
+        flower_groups = [fg for fg in flower_groups if fg["variants"]]
+
+        if not flower_groups:
+            logger.info(f"Batch {batch_index + 1}/{len(batches)} — nothing to do, skipping.")
             continue
 
-        logger.info(f"Batch {batch_index + 1}/{len(batches)}...")
-        batch_results = _summarize_batch(client, flowers)
+        logger.info(f"Batch {batch_index + 1}/{len(batches)} — {[fg['name'] for fg in flower_groups]}")
+        batch_results = _summarize_batch(client, flower_groups)
         results.update(batch_results)
-        logger.info(f"  Summarized: {[f['name'] + '/' + f['color'] for f in flowers]}")
 
         _checkpoint()
-        logger.info(f"  Checkpoint saved.")
+        logger.info(f"  Checkpoint saved. {len(results)}/{len(flower_names)} flowers done.")
 
         if batch_index < len(batches) - 1:
             time.sleep(SLEEP_BETWEEN_BATCHES)
 
     logger.info(f"Done. Written to {OUTPUT_CSV}")
-    missing = [
-        f"{row.get(COL_NAME)}/{row.get(COL_COLOR)}"
-        for row in rows
-        if not results.get(row["_row_key"])
-    ]
+    missing = [n for n in flower_names if n not in results]
     if missing:
         logger.warning(f"Missing summaries for: {missing}")
 
