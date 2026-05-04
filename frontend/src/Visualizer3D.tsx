@@ -1790,6 +1790,13 @@ return (
             }}>
               Explore flower meanings and create your own bouquet to convey everything you intend.
             </p>
+            <p style={{
+              margin: 0,
+              fontSize: '0.8rem', lineHeight: 1.7,
+              color: 'var(--viz-muted)', maxWidth: 340,
+            }}>
+              The visualizer displays flowers that share similar attributes as being connected. Use this information to help you choose similar flowers if you wish!
+            </p>
 
             <button
               onClick={() => setIntroDismissed(true)}
