@@ -2,6 +2,8 @@ WELCOME TO: FLORASENSE
 
 # 🌸 Flower Recommendation & Visualization Platform
 
+# Check out the project here! https://florasense.4300showcase.infosci.cornell.edu/
+
 ## Overview
 
 This project is an flower recommendation and visualization system that combines information retrieval techniques with AI-powered reasoning. It allows users to search for flowers based on meaning, occasion, aesthetics, and care preferences, and returns personalized recommendations with explanations behind each decision.
